@@ -1,0 +1,15 @@
+[submodule "src/ROS2swarm"]
+	path = src/ROS2swarm
+	url = https://github.com/ROS2swarm/ROS2swarm
+[submodule "src/driving_swarm_infrastructure"]
+	path = src/driving_swarm_infrastructure
+	url = https://github.com/ovgu-FINken/driving_swarm_infrastructure
+[submodule "src/turtlebot3"]
+	path = src/turtlebot3
+	url = https://github.com/ROBOTIS-GIT/turtlebot3
+[submodule "src/turtlebot3_msgs"]
+	path = src/turtlebot3_msgs
+	url = https://github.com/ROBOTIS-GIT/turtlebot3_msgs
+[submodule "src/turtlebot3_simulations"]
+	path = src/turtlebot3_simulations
+	url = https://github.com/ROBOTIS-GIT/turtlebot3_simulations

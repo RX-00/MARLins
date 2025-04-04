@@ -1,0 +1,26 @@
+# Ignore build, install, and log directories created by colcon
+/build/
+/install/
+/log/
+
+# Ignore colcon metadata file, if present
+/colcon.meta
+
+# Ignore Python bytecode files and cache directories
+*.py[cod]
+__pycache__/
+
+# Ignore Python egg-info directories
+*.egg-info/
+
+# Ignore temporary files
+*~
+*.swp
+
+# Ignore IDE and editor-specific directories and files
+.vscode/
+.idea/
+
+# Ignore OS-specific files
+.DS_Store
+Thumbs.db
