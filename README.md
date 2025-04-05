@@ -36,11 +36,7 @@ bash ~/swarm_ws/src/ROS2swarm/start_simulation.sh 4
 You can change the number to reflect how many TurtleBots you want to initialize in the Gazebo simulation. This next part will explain what's inside and how to use/modify this script:
 Below is an example Markdown file that documents the launch command and explains each argument in detail:
 
----
-
-# ROS2swarm Launch Command Documentation
-
-This document explains the following command used to launch a ROS 2 simulation with Gazebo using the ROS2swarm package. The command sets up the environment, spawns the robots, and defines the swarm behavior.
+The following command used to launch a ROS 2 simulation with Gazebo using the ROS2swarm package. The command sets up the environment, spawns the robots, and defines the swarm behavior.
 
 ```bash
 ROS_DOMAIN_ID=42 ros2 launch launch_gazebo create_enviroment.launch.py \
@@ -59,19 +55,19 @@ ROS_DOMAIN_ID=42 ros2 launch launch_gazebo create_enviroment.launch.py \
   logging:=False
 ```
 
-## Command Breakdown
+#### Command Breakdown
 
-### 1. Environment Variable
+##### 1. Environment Variable
 
 - **`ROS_DOMAIN_ID=42`**  
   Sets the DDS domain ID to 42. In ROS 2, this ensures that only nodes with the same domain communicate, effectively isolating this swarm’s network from other ROS 2 systems.
 
-### 2. Launching the Simulation
+##### 2. Launching the Simulation
 
 - **`ros2 launch launch_gazebo create_enviroment.launch.py`**  
   This part of the command starts the ROS 2 launch system to execute the `create_enviroment.launch.py` file found in the `launch_gazebo` package. This launch file is responsible for starting Gazebo, spawning robots, and configuring the simulation environment.
 
-### 3. Launch Parameters
+##### 3. Launch Parameters
 
 Each subsequent parameter is passed to the launch file using the syntax `parameter_name:=value`:
 
@@ -108,32 +104,6 @@ Each subsequent parameter is passed to the launch file using the syntax `paramet
 - **`logging:=False`**  
   Disables extra logging, keeping the console output less verbose. This is useful for performance or clarity during long-running simulations.
 
-## Overall Behavior
-
-When the command is executed, it will:
-
-1. **Set Up Communication:**  
-   The `ROS_DOMAIN_ID` ensures that all nodes (robots and simulation components) communicate within domain 42.
-
-2. **Launch the Simulation:**  
-   The `create_enviroment.launch.py` launch file starts Gazebo using the `arena_large.world` file and spawns 4 TurtleBot3 Burger robots.
-
-3. **Apply Behavior Configuration:**  
-   The swarm behavior is set to `dispersion_pattern`, causing the robots to spread apart once the simulation is running.
-
-4. **Position Robots:**  
-   The robots are placed starting at the origin (0.0, 0.0), with subsequent robots offset by 1.0 unit along the y-axis.
-
-5. **Manage Logging and Modes:**  
-   Logging is kept at an informational level and additional driving or verbose logging modes are disabled.
-
-This command and its parameters provide a flexible way to control various aspects of the simulation, from the environment and robot placement to the specific swarm behavior being executed.
-
-For additional details and context, please refer to the ROS2swarm codebase documentation citeturn0file0.
-
---- 
-
-Feel free to adjust or expand on this documentation as needed for your project.
 
 This command simply publishes a message of int8 value 1 to signal the robots to start moving.
 ``` bash
