@@ -27,3 +27,6 @@ Thumbs.db
 
 # Ignore egg-info directories
 *.egg-info/
+
+# Ignore VSCode workspace files
+*.code-workspace
