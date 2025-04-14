@@ -1,0 +1,12 @@
+name: swarm
+channels:
+  - conda-forge
+dependencies:
+  - matplotlib
+  - scipy
+  - pygame
+  - box2d-py
+  - pytorch
+  - pandas
+  - pyyaml
+prefix: /home/roy/miniconda3/envs/swarm

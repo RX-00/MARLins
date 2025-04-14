@@ -1,131 +1,99 @@
-# MARLins
-This project is for training a reinforcement learning (RL) policy that controls multiple robot agents to accomplish a (probably) push-to-place task.
+# MARLins with gym_kilobot
 
-NOTE: This may be subject to change on how/which simulator with RL we use...
+A custom suite of Gymnasium environment, `gym_kilobots` for simulating “kilobots,” a type of swarm robot, in a 2D world with Box2D. This package supports multiple variations of kilobot control (direct control, phototaxis, etc.) and includes environment configurations for tasks like “QuadAssembly” or “Yaml-based” environment definitions.
 
-# Installation
-The installation process is based on the guide provided by [ROS2swarm](https://github.com/ROS2swarm/ROS2swarm/blob/master/INSTALL_GUIDE.md) with some changes for Ubuntu 22.04.5 LTS and ROS 2 Humble (though it hopefully works for other ROS 2).
+This is an updated version of: https://github.com/gregorgebhardt/gym-kilobots
 
-First, clone this repository and make sure to include the submodules (pre-existing git repos we are using as sub-directories) with the following command:
+NOTE: This was originally going to use ROS 2 and Gazebo, which isn't ideal for RL training, hence why we updated this old gym environment. The original ROS 2 workspace can be found in swarm_ws.
 
-``` bash
-git clone --recurse-submodules git@github.com:RX-00/MARLins.git
-```
+## 1. Features
 
-Also make sure to install this dependency for the turtlebot:
+- **Box2D-based** physics simulation with kilobot models.
+- **Multiple environment classes** for standard tasks:
+  - `QuadAssemblyKilobotsEnv`
+  - `YamlKilobotsEnv` (load environment setup from YAML)
+  - `DirectControlKilobotsEnv`  
+- **Rendering** with a custom PyGame-based viewer.
+- **Gymnasium**-compatible, so you can use standard RL libraries (PPO, SAC, etc.) with these environments.
 
-``` bash
-sudo apt install ros-[name of your ROS version here]-dynamixel-sdk
-```
+---
 
-Please follow the installation guide for ROS2swarm's prerequirements and dependencies up until the `Installation of TurtleBot3 Support` section. To make things easier, the TurtleBot3 packages are included locally in this workspace alongside ROS2swarm rather than a separate one as seen [here](https://github.com/ROS2swarm/ROS2swarm/blob/master/INSTALL_GUIDE.md).
+## 2. Environment Setup
 
-## Build
-To build the whole project go to the root of your ROS 2 workspace and run
+We provide an `environment.yml` file to handle most dependencies via conda. Since Gymnasium 1.1.1 is not currently on conda, you’ll need to `pip install` it after creating the conda environment.
 
-``` bash
-colcon build --symlink-install
-```
-The reason why we use the flag `--symlink-install` is so that colcon creates symbolic links in the install directory that point back to the source files. This means the install space always reflects the current source code, even if a package lacks explicit install rules defined. This allows for convenient development since any change in source is available without always needing to explicitly rebuild. Colcon expects each package to have explicit install targets so if you leave this out some packages might not end up in the install space if they don't have them, leading to runtime issues.
-
-Now that you've built everything, please change your `~/.bashrc` file as seen in the next section so that the environment is correctly configured everytime you open a terminal session.
-
-## Environment Configuration
-Here's the bash commands for `.bashrc` to properly source this project. Be sure to change the workspace name, `swarm_ws`, to whatever you have.
-```bash
-source /opt/ros/[name of your ROS version here]/setup.bash
-source ~/swarm_ws/install/setup.bash
-export ROS_DOMAIN_ID=30 #TURTLEBOT3
-export GAZEBO_MODEL_PATH=$GAZEBO_MODEL_PATH:~/swarm_ws/src/turtlebot3_simulations/turtlebot3_gazebo/models
-export TURTLEBOT3_MODEL=waffle_pi
-```
-
-## Testing Installation
-To test if the TurtleBot3 packages are working you can try running:
-``` bash
-ros2 launch turtlebot3_gazebo turtlebot3_world.launch.py
-```
-
-To test if the ROS2swarm package is properly installed you can try running:
-``` bash
-bash ~/swarm_ws/src/ROS2swarm/start_simulation.sh 4
-```
-You can change the number to reflect how many TurtleBots you want to initialize in the Gazebo simulation. This next part will explain what's inside and how to use/modify this script:
-Below is an example Markdown file that documents the launch command and explains each argument in detail:
-
-The following command used to launch a ROS 2 simulation with Gazebo using the ROS2swarm package. The command sets up the environment, spawns the robots, and defines the swarm behavior.
+### 2.1 Create and Activate the Conda Environment
 
 ```bash
-ROS_DOMAIN_ID=42 ros2 launch launch_gazebo create_enviroment.launch.py \
-  gazebo_world:=arena_large.world \
-  pattern:=dispersion_pattern \
-  number_robots:=4 \
-  total_robots:=4 \
-  log_level:=info \
-  robot:=burger \
-  sensor_type:=lidar \
-  x_start:=0.0 \
-  x_dist:=0.0 \
-  y_start:=0.0 \
-  y_dist:=1.0 \
-  driving_swarm:=False \
-  logging:=False
+# From the project root (where environment.yml is located)
+conda env create -f environment.yml -c conda-forge
+
+# Activate the newly created environment
+conda activate swarm
 ```
 
-#### Command Breakdown
+### 2.2 Install Gymnasium 1.1.1 via pip
 
-##### 1. Environment Variable
+Inside your activated conda environment, run:
 
-- **`ROS_DOMAIN_ID=42`**  
-  Sets the DDS domain ID to 42. In ROS 2, this ensures that only nodes with the same domain communicate, effectively isolating this swarm’s network from other ROS 2 systems.
-
-##### 2. Launching the Simulation
-
-- **`ros2 launch launch_gazebo create_enviroment.launch.py`**  
-  This part of the command starts the ROS 2 launch system to execute the `create_enviroment.launch.py` file found in the `launch_gazebo` package. This launch file is responsible for starting Gazebo, spawning robots, and configuring the simulation environment.
-
-##### 3. Launch Parameters
-
-Each subsequent parameter is passed to the launch file using the syntax `parameter_name:=value`:
-
-- **`gazebo_world:=arena_large.world`**  
-  Specifies the world file used by Gazebo. The file `arena_large.world` defines the environment in which the simulation takes place (e.g., arena dimensions, obstacles).
-
-- **`pattern:=dispersion_pattern`**  
-  Sets the swarm behavior pattern. Here, the `dispersion_pattern` instructs the robots to spread out from each other once activated.
-
-- **`number_robots:=4`**  
-  Indicates the number of robots to instantiate in the simulation (four robots in this example).
-
-- **`total_robots:=4`**  
-  Specifies the total expected number of robots. Although similar to `number_robots`, it may be used internally for consistency checks within the launch configuration.
-
-- **`log_level:=info`**  
-  Determines the logging verbosity. Setting it to `info` displays informational messages, which is useful for monitoring the simulation status.
-
-- **`robot:=burger`**  
-  Selects the type of robot to use. In this case, `burger` refers to the TurtleBot3 Burger model, meaning that the corresponding robot description (URDF) and configurations will be loaded.
-
-- **`sensor_type:=lidar`**  
-  Configures the robots to use LiDAR sensors for perception, affecting how sensor data is acquired and processed.
-
-- **`x_start:=0.0` and `y_start:=0.0`**  
-  Define the starting coordinates (x and y) for the first robot. With both set to 0.0, the first robot spawns at the origin.
-
-- **`x_dist:=0.0` and `y_dist:=1.0`**  
-  Determine the offset between consecutive robots. With an x offset of 0.0 and a y offset of 1.0, each subsequent robot is positioned 1.0 unit further along the y-axis, forming a vertical line.
-
-- **`driving_swarm:=False`**  
-  This flag disables a specific coordinated “driving” mode for the swarm. When set to False, the simulation does not engage any additional driving behavior that might alter the default movement pattern.
-
-- **`logging:=False`**  
-  Disables extra logging, keeping the console output less verbose. This is useful for performance or clarity during long-running simulations.
-
-
-This command simply publishes a message of int8 value 1 to signal the robots to start moving.
-``` bash
-bash ~/swarm_ws/src/ROS2swarm/start_command.sh
+```bash
+pip install gymnasium==1.1.1
 ```
 
-## Notes
-The repomix-output.xml under the ROS2swarm package is created with [Repomix](https://repomix.com), which is a packing of the whole package into an AI-friendly format for use with LLMs. Instead of using just copilot or an AI IDE like Cursor, I think for now that things like this is more effective. My theory being that robotics tools are more obscure/maybe more difficult so these AI-assisted programming IDEs struggle with them. Meanwhile I find LLMs to be better understand these repos when compacting the whole project into a single file they can read.
+This ensures the version matches what’s not yet available on conda. Verify:
+
+```bash
+python -c "import gymnasium; print(gymnasium.__version__)"
+# should output 1.1.0
+```
+
+---
+
+## 3. Installing **gym_kilobots** Gymnasium Environment
+
+From the source repo folder, run:
+
+```bash
+pip install -e .
+```
+
+The `-e` (editable) flag means any local code changes are reflected without re-installation.
+
+---
+
+## 4. Usage
+
+### 4.1 Import and Make an Environment
+
+```python
+import gymnasium as gym
+import gym_kilobots  # triggers environment registration
+
+env = gym.make("Kilobots-QuadAssembly-v0", render_mode="human")
+obs, info = env.reset()
+for _ in range(500):
+    action = env.action_space.sample() 
+    obs, reward, done, truncated, info = env.step(action)
+    if done or truncated:
+        break
+env.close()
+```
+
+- Use `render_mode=None` to run without GUI (no PyGame window).
+
+### 4.2 Example: Running the Built-In `test.py`
+
+There is a `test.py` script in `gym_kilobots` that demonstrates usage of one environment:
+
+```bash
+python gym_kilobots/test.py
+```
+
+This script will create the “QuadAssembly” environment, reset, and run for a few hundred steps. If everything is correct, a PyGame window appears with kilobots moving around (assuming `render_mode='human'` in the code).
+
+---
+
+## 5. Notes and Troubleshooting
+
+1. **Mixing Conda & Pip**  
+   - We install Gymnasium 1.1.0 via pip, and everything else via `environment.yml` in conda. This is generally safe as long as no version conflicts arise, but keep an eye out for warnings.
