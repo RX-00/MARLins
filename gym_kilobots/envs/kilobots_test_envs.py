@@ -21,25 +21,32 @@ class QuadPushingEnv(KilobotsEnv):
         super().__init__()
 
 
-class QuadAssemblyKilobotsEnv(KilobotsEnv):  # Ensure this class is defined
-    def __init__(self, render_mode=None):
+class QuadAssemblyKilobotsEnv(KilobotsEnv):
+    def __init__(self,
+                 render_mode=None,
+                 num_kilobots=5,
+                 num_objects=1,
+                 object_config=None,
+                 light_position=None,
+                 kilobot_positions=None,
+                 ):
         # Initialize attributes before calling super().__init__()
         self._swarm_spawn_distribution = stats.uniform(loc=(-.95, -.7), scale=(.9, 1.4))
         self._obj_spawn_distribution = stats.uniform(loc=(.05, -.7), scale=(.9, .65))
+        self._light_position = light_position
+        self._kilobot_positions = kilobot_positions
+        
         super().__init__(render_mode=render_mode)  # Pass render_mode to the parent class
 
-        # Define observation space based on kilobots and objects
-        num_kilobots = 5  # Number of kilobots
-        num_objects = 4  # Number of objects
-        kilobot_obs_dim = 2  # x, y positions
-        object_obs_dim = 3  # x, y, orientation
+        # Rename attributes to avoid conflict with read-only properties
+        self._num_kilobots = num_kilobots  # Number of kilobots
+        self._num_objects = num_objects    # Number of objects
+        self._object_config = object_config  # Optional list of (position, orientation)
+        self.kilobot_obs_dim = 2  # x, y positions
+        self.object_obs_dim = 3  # x, y, orientation
 
-        # self.observation_space = spaces.Box(
-        #     low=-np.inf,
-        #     high=np.inf,
-        #     shape=(num_kilobots * kilobot_obs_dim + num_objects * object_obs_dim,),
-        #     dtype=np.float32,
-        # )
+        print(self._num_objects)
+
         obs, _ = self.reset()   # sample the true reset() output
         self.observation_space = spaces.Box(
             low=-np.inf,
@@ -56,22 +63,40 @@ class QuadAssemblyKilobotsEnv(KilobotsEnv):  # Ensure this class is defined
         swarm_spawn_location = self._swarm_spawn_distribution.rvs()
         obj_spawn_location = self._obj_spawn_distribution.rvs()
 
-        self._objects = [
-            CornerQuad(world=self.world, width=.15, height=.15, position=(.45, .605)),
-            CornerQuad(world=self.world, width=.15, height=.15, position=(.605, .605), orientation=-np.pi / 2),
-            CornerQuad(world=self.world, width=.15, height=.15, position=(.605, .45), orientation=-np.pi),
-            CornerQuad(world=self.world, width=.15, height=.15, position=obj_spawn_location, orientation=-np.pi / 2)
-        ]
+        # Light spawn
+        if self._light_position is not None:
+            swarm_spawn_location = tuple(self._light_position)
+        else:
+            swarm_spawn_location = self._swarm_spawn_distribution.rvs()
+        # Object spawn (unchanged)
+        obj_spawn_location   = self._obj_spawn_distribution.rvs()
+
+        # Spawn objects: use specific config if provided
+        self._objects = []
+        if self._object_config is not None:
+            for config in self._object_config:
+                # Each config is assumed to be a tuple: (position, orientation)
+                pos, orientation = config
+                self._objects.append(CornerQuad(world=self.world, width=0.15, height=0.15, position=pos, orientation=orientation))
+        else:
+            for i in range(self._num_objects):
+                offset = (0.02 * i, 0.02 * i)
+                pos = (obj_spawn_location[0] + offset[0], obj_spawn_location[1] + offset[1])
+                self._objects.append(CornerQuad(world=self.world, width=0.15, height=0.15, position=pos, orientation=-np.pi/2))
 
         self._light = CircularGradientLight(position=swarm_spawn_location)
-
-        self._kilobots = [
-            PhototaxisKilobot(self.world, position=swarm_spawn_location + (.0, .0), light=self._light),
-            PhototaxisKilobot(self.world, position=swarm_spawn_location + (.03, .0), light=self._light),
-            PhototaxisKilobot(self.world, position=swarm_spawn_location + (.0, .03), light=self._light),
-            PhototaxisKilobot(self.world, position=swarm_spawn_location + (-.03, .0), light=self._light),
-            PhototaxisKilobot(self.world, position=swarm_spawn_location + (.0, -.03), light=self._light)
-        ]
+        
+        # Spawn kilobots at fixed positions or with the usual symmetric offsets:
+        self._kilobots = []
+        if self._kilobot_positions is not None:
+            for pos in self._kilobot_positions:
+                self._kilobots.append(PhototaxisKilobot(self.world, position=tuple(pos), light=self._light))
+        else:
+            for i in range(self._num_kilobots):
+                angle = 2 * np.pi * i / self._num_kilobots
+                offset = (0.03 * np.cos(angle), 0.03 * np.sin(angle))
+                pos = (swarm_spawn_location[0] + offset[0], swarm_spawn_location[1] + offset[1])
+                self._kilobots.append(PhototaxisKilobot(self.world, position=pos, light=self._light))
 
     def has_finished(self, state, action):
         return False
@@ -82,6 +107,14 @@ class QuadAssemblyKilobotsEnv(KilobotsEnv):  # Ensure this class is defined
     def get_info(self, state, action):
         return None
 
+    def get_objects_status(self):
+        objects_info = []
+
+        # Iterate through the spawned objects and print their status
+        for i, obj in enumerate(self._objects):
+            objects_info.append(f"object {i}: position: {obj.get_position()}, orientation: {obj.get_orientation()}")
+
+        return objects_info
 
 class TriangleTestEnv(KilobotsEnv):
     def _configure_environment(self):

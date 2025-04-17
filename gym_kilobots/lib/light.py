@@ -149,16 +149,22 @@ class CompositeLight(Light):
 
 
 class CircularGradientLight(SinglePositionLight):
-    def __init__(self, radius=.2, *args, **kwargs):
+    def __init__(self, radius=.2, exponent=3, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._radius = radius
+        self._exponent = exponent
+        # Explanation:
+        # The "exponent" controls how quickly the light intensity drops off with distance.
+        # A higher exponent (e.g., 3 or 4) makes the gradient steeper, so intensity decays rapidly,
+        # resulting in a strong, focused influence near the light source.
+        # Conversely, a lower exponent (e.g., 1 or 2) produces a gentler gradient with a smoother, longer-range effect.
 
     def get_value(self, position: np.ndarray):
         distance = np.linalg.norm(position - self._position)
 
         # compute value as linear interpolation between 255 and 0
         value = np.ones(position.shape[0])
-        value -= distance / self._radius
+        value -= (distance / self._radius) ** self._exponent
         value = np.maximum(np.minimum(value, 1.), .0)
         value *= 255
 
@@ -179,7 +185,7 @@ class CircularGradientLight(SinglePositionLight):
 
         # compute value as linear interpolation between 255 and 0
         value = np.ones(position.shape[0])
-        value -= norm_gradient / self._radius
+        value -= (norm_gradient / self._radius) ** self._exponent
         value = np.maximum(np.minimum(value, 1.), .0)
         value *= 255
         # normalize gradients and set gradients to zero if norm larger than radius

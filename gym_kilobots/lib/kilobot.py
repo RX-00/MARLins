@@ -301,7 +301,7 @@ class SimpleAccelerationControlKilobot(SimpleVelocityControlKilobot):
 
 
 class PhototaxisKilobot(Kilobot):
-    def __init__(self, world, position=None, orientation=None, light=None):
+    def __init__(self, world, position=None, orientation=None, light=None, damping=0.9):
         super(PhototaxisKilobot, self).__init__(world=world, position=position, orientation=orientation, light=light)
 
         self.__light_measurement = 0
@@ -311,6 +311,13 @@ class PhototaxisKilobot(Kilobot):
         self.__update_counter = 0
         self.__no_change_counter = 0
         self.__no_change_threshold = 15
+        
+        # The "damping" factor scales the control signal derived from the light gradient.
+        # When damping is closer to 1, the kilobot uses almost the full strength of the sensed gradient,
+        # leading to more vigorous and rapid movements toward or away from the light.
+        # When damping is closer to 0, the control signal is significantly reduced,
+        # resulting in slower, less responsive adjustments.
+        self.damping = damping
 
     def _setup(self):
         self.turn_left()
@@ -331,3 +338,8 @@ class PhototaxisKilobot(Kilobot):
             self.__no_change_counter = 0
         else:
             self.__no_change_counter += 1
+
+    def update(self):
+        gradient = self.sense_light()
+        control_signal = np.array(gradient) * self.damping
+        self.position += control_signal

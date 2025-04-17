@@ -20,7 +20,7 @@ class KilobotsEnv(gym.Env):
     world_size = world_width, world_height = 2., 1.5
     screen_size = screen_width, screen_height = 1200, 900
 
-    _observe_objects = False
+    _observe_objects = True
     _observe_light = True
 
     __sim_steps_per_second = 10
@@ -65,8 +65,9 @@ class KilobotsEnv(gym.Env):
         self.render_mode = 'human'
         self.video_path = None
 
-        self._configure_environment()
-        self._kilobots = []
+        # NOTE: we are going to set the environment and kilobots in the actual environment implementation so that we can pass arguments to it.
+        #self._configure_environment()
+        #self._kilobots = []
 
         # Define default observation and action spaces
         self.observation_space = spaces.Box(

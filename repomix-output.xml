@@ -132,7 +132,7 @@ class KilobotsEnv(gym.Env):
     world_size = world_width, world_height = 2., 1.5
     screen_size = screen_width, screen_height = 1200, 900
 
-    _observe_objects = False
+    _observe_objects = True
     _observe_light = True
 
     __sim_steps_per_second = 10
@@ -177,8 +177,9 @@ class KilobotsEnv(gym.Env):
         self.render_mode = 'human'
         self.video_path = None
 
-        self._configure_environment()
-        self._kilobots = []
+        # NOTE: we are going to set the environment and kilobots in the actual environment implementation so that we can pass arguments to it.
+        #self._configure_environment()
+        #self._kilobots = []
 
         # Define default observation and action spaces
         self.observation_space = spaces.Box(
@@ -428,106 +429,6 @@ class UnknownObjectException(Exception):
 
 class UnknownLightTypeException(Exception):
     pass
-</file>
-
-<file path="gym_kilobots/envs/kilobots_test_envs.py">
-from .kilobots_env import KilobotsEnv
-
-import numpy as np
-from scipy import stats
-from gymnasium import spaces  # Import spaces from gymnasium
-
-from ..lib.body import CornerQuad, Triangle, LForm, CForm, TForm
-from ..lib.kilobot import PhototaxisKilobot, SimplePhototaxisKilobot
-from ..lib.light import CircularGradientLight
-
-
-class QuadPushingEnv(KilobotsEnv):
-    world_size = world_width, world_height = 1., .5
-
-    def __init__(self):
-        # distribution for sampling swarm position
-        self._swarm_spawn_distribution = stats.uniform(loc=(-.95, -.7), scale=(.9, 1.4))
-        # distribution for sampling the pushing object
-        self._obj_spawn_distribution = stats.uniform(loc=(.05, -.7), scale=(.9, .65))
-
-        super().__init__()
-
-
-class QuadAssemblyKilobotsEnv(KilobotsEnv):  # Ensure this class is defined
-    def __init__(self, render_mode=None):
-        # Initialize attributes before calling super().__init__()
-        self._swarm_spawn_distribution = stats.uniform(loc=(-.95, -.7), scale=(.9, 1.4))
-        self._obj_spawn_distribution = stats.uniform(loc=(.05, -.7), scale=(.9, .65))
-        super().__init__(render_mode=render_mode)  # Pass render_mode to the parent class
-
-        # Define observation space based on kilobots and objects
-        num_kilobots = 5  # Number of kilobots
-        num_objects = 4  # Number of objects
-        kilobot_obs_dim = 2  # x, y positions
-        object_obs_dim = 3  # x, y, orientation
-
-        self.observation_space = spaces.Box(
-            low=-np.inf,
-            high=np.inf,
-            shape=(num_kilobots * kilobot_obs_dim + num_objects * object_obs_dim,),
-            dtype=np.float32,
-        )
-
-        self.action_space = spaces.Box(
-            low=-1.0, high=1.0, shape=(2,), dtype=np.float32
-        )  # Example action space for light control
-
-    def _configure_environment(self):
-        swarm_spawn_location = self._swarm_spawn_distribution.rvs()
-        obj_spawn_location = self._obj_spawn_distribution.rvs()
-
-        self._objects = [
-            CornerQuad(world=self.world, width=.15, height=.15, position=(.45, .605)),
-            CornerQuad(world=self.world, width=.15, height=.15, position=(.605, .605), orientation=-np.pi / 2),
-            CornerQuad(world=self.world, width=.15, height=.15, position=(.605, .45), orientation=-np.pi),
-            CornerQuad(world=self.world, width=.15, height=.15, position=obj_spawn_location, orientation=-np.pi / 2)
-        ]
-
-        self._light = CircularGradientLight(position=swarm_spawn_location)
-
-        self._kilobots = [
-            PhototaxisKilobot(self.world, position=swarm_spawn_location + (.0, .0), light=self._light),
-            PhototaxisKilobot(self.world, position=swarm_spawn_location + (.03, .0), light=self._light),
-            PhototaxisKilobot(self.world, position=swarm_spawn_location + (.0, .03), light=self._light),
-            PhototaxisKilobot(self.world, position=swarm_spawn_location + (-.03, .0), light=self._light),
-            PhototaxisKilobot(self.world, position=swarm_spawn_location + (.0, -.03), light=self._light)
-        ]
-
-    def has_finished(self, state, action):
-        return False
-
-    def get_reward(self, state, action, new_state):
-        return 1.0
-
-    def get_info(self, state, action):
-        return None
-
-
-class TriangleTestEnv(KilobotsEnv):
-    def _configure_environment(self):
-        self._objects = [Triangle(world=self.world, width=.15, height=.15, position=(.0, .0)),
-                         LForm(world=self.world, width=.15, height=.15, position=(.0, .3)),
-                         TForm(world=self.world, width=.15, height=.15, position=(.0, -.3)),
-                         CForm(world=self.world, width=.15, height=.15, position=(.3, .0))]
-
-    # TODO implement has_finished function
-    def has_finished(self, state, action):
-        return False
-
-    # TODO implement reward function
-    def get_reward(self, state, action, new_state):
-        # compute reward based on task and swarm state
-        return 1.
-
-    # info function
-    def get_info(self, state, action):
-        return None
 </file>
 
 <file path="gym_kilobots/envs/yaml_kilobots_env.py">
@@ -1548,7 +1449,7 @@ class SimpleAccelerationControlKilobot(SimpleVelocityControlKilobot):
 
 
 class PhototaxisKilobot(Kilobot):
-    def __init__(self, world, position=None, orientation=None, light=None):
+    def __init__(self, world, position=None, orientation=None, light=None, damping=0.9):
         super(PhototaxisKilobot, self).__init__(world=world, position=position, orientation=orientation, light=light)
 
         self.__light_measurement = 0
@@ -1558,6 +1459,13 @@ class PhototaxisKilobot(Kilobot):
         self.__update_counter = 0
         self.__no_change_counter = 0
         self.__no_change_threshold = 15
+        
+        # The "damping" factor scales the control signal derived from the light gradient.
+        # When damping is closer to 1, the kilobot uses almost the full strength of the sensed gradient,
+        # leading to more vigorous and rapid movements toward or away from the light.
+        # When damping is closer to 0, the control signal is significantly reduced,
+        # resulting in slower, less responsive adjustments.
+        self.damping = damping
 
     def _setup(self):
         self.turn_left()
@@ -1578,6 +1486,11 @@ class PhototaxisKilobot(Kilobot):
             self.__no_change_counter = 0
         else:
             self.__no_change_counter += 1
+
+    def update(self):
+        gradient = self.sense_light()
+        control_signal = np.array(gradient) * self.damping
+        self.position += control_signal
 </file>
 
 <file path="gym_kilobots/lib/light.py">
@@ -1732,16 +1645,22 @@ class CompositeLight(Light):
 
 
 class CircularGradientLight(SinglePositionLight):
-    def __init__(self, radius=.2, *args, **kwargs):
+    def __init__(self, radius=.2, exponent=3, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._radius = radius
+        self._exponent = exponent
+        # Explanation:
+        # The "exponent" controls how quickly the light intensity drops off with distance.
+        # A higher exponent (e.g., 3 or 4) makes the gradient steeper, so intensity decays rapidly,
+        # resulting in a strong, focused influence near the light source.
+        # Conversely, a lower exponent (e.g., 1 or 2) produces a gentler gradient with a smoother, longer-range effect.
 
     def get_value(self, position: np.ndarray):
         distance = np.linalg.norm(position - self._position)
 
         # compute value as linear interpolation between 255 and 0
         value = np.ones(position.shape[0])
-        value -= distance / self._radius
+        value -= (distance / self._radius) ** self._exponent
         value = np.maximum(np.minimum(value, 1.), .0)
         value *= 255
 
@@ -1762,7 +1681,7 @@ class CircularGradientLight(SinglePositionLight):
 
         # compute value as linear interpolation between 255 and 0
         value = np.ones(position.shape[0])
-        value -= norm_gradient / self._radius
+        value -= (norm_gradient / self._radius) ** self._exponent
         value = np.maximum(np.minimum(value, 1.), .0)
         value *= 255
         # normalize gradients and set gradients to zero if norm larger than radius
@@ -2069,8 +1988,175 @@ def update_polygon(polygon, artist):
     artist.set_xy(np.array(polygon.plot_vertices))
 </file>
 
+<file path="gym_kilobots/tools.py">
+import pandas as pd
+
+
+
+def get_dataframe_from_state(state):
+    num_kilobots = state['kilobots'].shape[0]
+    num_objects = state['objects'].shape[0]
+
+    kilobot_index, objects_index, light_index = get_multiindices(num_kilobots, num_objects)
+
+    pass
+</file>
+
+<file path="environment.yml">
+name: swarm
+channels:
+  - conda-forge
+dependencies:
+  - matplotlib
+  - scipy
+  - pygame
+  - box2d-py
+  - pytorch
+  - pandas
+  - pyyaml
+prefix: /home/roy/miniconda3/envs/swarm
+</file>
+
+<file path="setup.py">
+from setuptools import setup, find_packages
+
+setup(
+    name='gym_kilobots',
+    version='0.0.1',
+    install_requires=[
+        'gymnasium',  # Replace gym with gymnasium
+        'box2d-py',
+        'numpy',
+        'scipy',
+        'pygame',
+        'matplotlib'
+    ],
+    packages=find_packages()
+)
+</file>
+
+<file path="gym_kilobots/envs/kilobots_test_envs.py">
+from .kilobots_env import KilobotsEnv
+
+import numpy as np
+from scipy import stats
+from gymnasium import spaces  # Import spaces from gymnasium
+
+from ..lib.body import CornerQuad, Triangle, LForm, CForm, TForm
+from ..lib.kilobot import PhototaxisKilobot, SimplePhototaxisKilobot
+from ..lib.light import CircularGradientLight
+
+
+class QuadPushingEnv(KilobotsEnv):
+    world_size = world_width, world_height = 1., .5
+
+    def __init__(self):
+        # distribution for sampling swarm position
+        self._swarm_spawn_distribution = stats.uniform(loc=(-.95, -.7), scale=(.9, 1.4))
+        # distribution for sampling the pushing object
+        self._obj_spawn_distribution = stats.uniform(loc=(.05, -.7), scale=(.9, .65))
+
+        super().__init__()
+
+
+class QuadAssemblyKilobotsEnv(KilobotsEnv):
+    def __init__(self, render_mode=None, num_kilobots=5, num_objects=1, object_config=None):
+        # Initialize attributes before calling super().__init__()
+        self._swarm_spawn_distribution = stats.uniform(loc=(-.95, -.7), scale=(.9, 1.4))
+        self._obj_spawn_distribution = stats.uniform(loc=(.05, -.7), scale=(.9, .65))
+        super().__init__(render_mode=render_mode)  # Pass render_mode to the parent class
+
+        # Rename attributes to avoid conflict with read-only properties
+        self._num_kilobots = num_kilobots  # Number of kilobots
+        self._num_objects = num_objects    # Number of objects
+        self._object_config = object_config  # Optional list of (position, orientation)
+        self.kilobot_obs_dim = 2  # x, y positions
+        self.object_obs_dim = 3  # x, y, orientation
+
+        print(self._num_objects)
+
+        obs, _ = self.reset()   # sample the true reset() output
+        self.observation_space = spaces.Box(
+            low=-np.inf,
+            high=np.inf,
+            shape=obs.shape,
+            dtype=obs.dtype,
+        )
+
+        self.action_space = spaces.Box(
+            low=-1.0, high=1.0, shape=(2,), dtype=np.float32
+        )  # Example action space for light control
+
+    def _configure_environment(self):
+        swarm_spawn_location = self._swarm_spawn_distribution.rvs()
+        obj_spawn_location = self._obj_spawn_distribution.rvs()
+
+        # Spawn objects: use specific config if provided
+        self._objects = []
+        if self._object_config is not None:
+            for config in self._object_config:
+                # Each config is assumed to be a tuple: (position, orientation)
+                pos, orientation = config
+                self._objects.append(CornerQuad(world=self.world, width=0.15, height=0.15, position=pos, orientation=orientation))
+        else:
+            for i in range(self._num_objects):
+                offset = (0.02 * i, 0.02 * i)
+                pos = (obj_spawn_location[0] + offset[0], obj_spawn_location[1] + offset[1])
+                self._objects.append(CornerQuad(world=self.world, width=0.15, height=0.15, position=pos, orientation=-np.pi/2))
+
+        self._light = CircularGradientLight(position=swarm_spawn_location)
+
+        # Spawn kilobots using self._num_kilobots
+        self._kilobots = []
+        for i in range(self._num_kilobots):
+            angle = 2 * np.pi * i / self._num_kilobots
+            offset = (0.03 * np.cos(angle), 0.03 * np.sin(angle))
+            pos = (swarm_spawn_location[0] + offset[0], swarm_spawn_location[1] + offset[1])
+            self._kilobots.append(PhototaxisKilobot(self.world, position=pos, light=self._light))
+
+    def has_finished(self, state, action):
+        return False
+
+    def get_reward(self, state, action, new_state):
+        return 1.0
+
+    def get_info(self, state, action):
+        return None
+
+    def get_objects_status(self):
+        objects_info = []
+
+        # Iterate through the spawned objects and print their status
+        for i, obj in enumerate(self._objects):
+            objects_info.append(f"object {i}: position: {obj.get_position()}, orientation: {obj.get_orientation()}")
+
+        return objects_info
+
+class TriangleTestEnv(KilobotsEnv):
+    def _configure_environment(self):
+        self._objects = [Triangle(world=self.world, width=.15, height=.15, position=(.0, .0)),
+                         LForm(world=self.world, width=.15, height=.15, position=(.0, .3)),
+                         TForm(world=self.world, width=.15, height=.15, position=(.0, -.3)),
+                         CForm(world=self.world, width=.15, height=.15, position=(.3, .0))]
+
+    # TODO implement has_finished function
+    def has_finished(self, state, action):
+        return False
+
+    # TODO implement reward function
+    def get_reward(self, state, action, new_state):
+        # compute reward based on task and swarm state
+        return 1.
+
+    # info function
+    def get_info(self, state, action):
+        return None
+</file>
+
 <file path="gym_kilobots/kb_rendering.py">
 import numpy as np
+import os
+os.environ["PYGAME_DETECT_AVX2"] = "1"  # Suppress pygame AVX2 warning
 import pygame
 # from pygame import gfxdraw
 pygame.init()
@@ -2187,70 +2273,52 @@ class KilobotsViewer(object):
 
 <file path="gym_kilobots/test.py">
 import os
+os.environ["PYGAME_DETECT_AVX2"] = "1"
+import numpy as np
 import gymnasium as gym
 import gym_kilobots
-import numpy as np
+import pygame  # Initialize pygame for keyboard input
 
-# Suppress pygame AVX2 warning
-os.environ["PYGAME_DETECT_AVX2"] = "1"
+if __name__ == "__main__":
+    pygame.init()  # Initialize pygame for keyboard input
 
-env = gym.make('Kilobots-QuadAssembly-v0', render_mode='human')
-obs, info = env.reset()
+    env = gym.make('Kilobots-QuadAssembly-v0', render_mode='human', num_kilobots=4, num_objects=2)
 
-for t in range(300):
-    env.render()
-    obs, reward, terminated, truncated, info = env.step(env.action_space.sample())
-    if terminated or truncated:
-        break
+    obs, info = env.reset()
 
-env.close()  # Ensure the environment is properly closed
-</file>
+    running = True
+    while running:
+        # Process pygame events
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
 
-<file path="gym_kilobots/tools.py">
-import pandas as pd
+        # Control the light source with the keyboard
+        # Get keyboard state and set action accordingly
+        # NOTE: if you want to control the light source with a random input, just give env.step() the argument: env.action_space.sample()
+        keys = pygame.key.get_pressed()
+        action = [0.0, 0.0]
+        if keys[pygame.K_UP]:
+            action[1] = 1.0
+        if keys[pygame.K_DOWN]:
+            action[1] = -1.0
+        if keys[pygame.K_LEFT]:
+            action[0] = -1.0
+        if keys[pygame.K_RIGHT]:
+            action[0] = 1.0
 
+        env.render()
+        obs, reward, terminated, truncated, info = env.step(np.array(action, dtype=np.float32))
 
+        # Print the orientation of the objects using the unwrapped environment
+        print(env.unwrapped.get_objects_status())
 
-def get_dataframe_from_state(state):
-    num_kilobots = state['kilobots'].shape[0]
-    num_objects = state['objects'].shape[0]
+        # End episode
+        if terminated or truncated:
+            break
 
-    kilobot_index, objects_index, light_index = get_multiindices(num_kilobots, num_objects)
-
-    pass
-</file>
-
-<file path="environment.yml">
-name: swarm
-channels:
-  - conda-forge
-dependencies:
-  - matplotlib
-  - scipy
-  - pygame
-  - box2d-py
-  - pytorch
-  - pandas
-  - pyyaml
-prefix: /home/roy/miniconda3/envs/swarm
-</file>
-
-<file path="setup.py">
-from setuptools import setup, find_packages
-
-setup(
-    name='gym_kilobots',
-    version='0.0.1',
-    install_requires=[
-        'gymnasium',  # Replace gym with gymnasium
-        'box2d-py',
-        'numpy',
-        'scipy',
-        'pygame',
-        'matplotlib'
-    ],
-    packages=find_packages()
-)
+    env.close()  # Ensure the environment is properly closed
+    pygame.quit()  # Quit pygame
 </file>
 
 <file path=".gitmodules">
