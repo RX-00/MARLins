@@ -101,7 +101,7 @@ This script will create the “QuadAssembly” environment, reset, and run for a
 ## 6. TODOs
 For next week!
 
-- [] Make sure gradient navigation works for following light/Make sure collisions work as expected (Roy)
+- [x] Make sure gradient navigation works for following light/Make sure collisions work as expected (Roy, Grace)
 
 - [] StableBaselines3 PPO for moving swarm cohesively to a destination (Anais, Osaro)
 
