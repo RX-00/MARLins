@@ -34,11 +34,18 @@ class QuadAssemblyKilobotsEnv(KilobotsEnv):  # Ensure this class is defined
         kilobot_obs_dim = 2  # x, y positions
         object_obs_dim = 3  # x, y, orientation
 
+        # self.observation_space = spaces.Box(
+        #     low=-np.inf,
+        #     high=np.inf,
+        #     shape=(num_kilobots * kilobot_obs_dim + num_objects * object_obs_dim,),
+        #     dtype=np.float32,
+        # )
+        obs, _ = self.reset()   # sample the true reset() output
         self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,
-            shape=(num_kilobots * kilobot_obs_dim + num_objects * object_obs_dim,),
-            dtype=np.float32,
+            shape=obs.shape,
+            dtype=obs.dtype,
         )
 
         self.action_space = spaces.Box(

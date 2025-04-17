@@ -97,3 +97,18 @@ This script will create the “QuadAssembly” environment, reset, and run for a
 
 1. **Mixing Conda & Pip**  
    - We install Gymnasium 1.1.0 via pip, and everything else via `environment.yml` in conda. This is generally safe as long as no version conflicts arise, but keep an eye out for warnings.
+
+## 6. TODOs
+For next week!
+
+- [] Make sure gradient navigation works for following light/Make sure collisions work as expected (Roy)
+
+- [] StableBaselines3 PPO for moving swarm cohesively to a destination (Anais, Osaro)
+
+  - [] Learning for pushing a block (translation) with the swarm (LATER)
+
+  - [] Learning for a rotating a block (rotation) with the swarm (LATER)
+
+- [] Report (Grace, Osaro)
+
+- [] Presentation (Grace, Osaro)

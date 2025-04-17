@@ -1,4 +1,6 @@
 import numpy as np
+import os
+os.environ["PYGAME_DETECT_AVX2"] = "1"  # Suppress pygame AVX2 warning
 import pygame
 # from pygame import gfxdraw
 pygame.init()

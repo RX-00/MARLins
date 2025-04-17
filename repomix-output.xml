@@ -1,0 +1,2426 @@
+This file is a merged representation of a subset of the codebase, containing files not matching ignore patterns, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching these patterns are excluded: swarm_ws/
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+<additional_info>
+
+</additional_info>
+
+</file_summary>
+
+<directory_structure>
+gym_kilobots/
+  envs/
+    __init__.py
+    direct_control_kilobots_env.py
+    kilobots_env.py
+    kilobots_test_envs.py
+    yaml_kilobots_env.py
+  lib/
+    __init__.py
+    body.py
+    kilobot.py
+    light.py
+  __init__.py
+  kb_plotting.py
+  kb_rendering.py
+  test.py
+  tools.py
+.gitignore
+.gitmodules
+environment.yml
+README.md
+setup.py
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="gym_kilobots/envs/__init__.py">
+from .kilobots_env import KilobotsEnv
+from .yaml_kilobots_env import YamlKilobotsEnv
+from .direct_control_kilobots_env import DirectControlKilobotsEnv
+from .kilobots_test_envs import QuadAssemblyKilobotsEnv  # Import the class
+</file>
+
+<file path="gym_kilobots/envs/direct_control_kilobots_env.py">
+import abc
+import numpy as np
+from gymnasium import spaces  # Updated to gymnasium
+from .kilobots_env import KilobotsEnv
+
+
+class DirectControlKilobotsEnv(KilobotsEnv):
+    def __init__(self, **kwargs):
+        super(DirectControlKilobotsEnv, self).__init__(**kwargs)
+
+    @property
+    def action_space(self):
+        as_low = np.array([kb.action_space.low for kb in self._kilobots])
+        as_high = np.array([kb.action_space.high for kb in self._kilobots])
+        return spaces.Box(as_low, as_high, dtype=np.float64)
+
+    def step(self, actions: np.ndarray):
+        if actions is not None:
+            # assert self.action_space.contains(actions), 'actions not in action_space'
+
+            for kb, a in zip(self.kilobots, actions):
+                kb.set_action(a)
+
+        else:
+            for kb in self.kilobots:
+                kb.set_action(None)
+
+        return super(DirectControlKilobotsEnv, self).step(None)
+</file>
+
+<file path="gym_kilobots/envs/kilobots_env.py">
+import time
+
+import gymnasium as gym
+from gymnasium import spaces
+
+import numpy as np
+
+from Box2D import b2World, b2ChainShape
+
+from ..lib.body import Body, _world_scale
+from ..lib.kilobot import Kilobot
+from ..lib.light import Light
+
+import abc
+
+
+class KilobotsEnv(gym.Env):
+    metadata = {'render_modes': ['human', 'rgb_array'], 'render_fps': 30}  # Updated metadata
+
+    world_size = world_width, world_height = 2., 1.5
+    screen_size = screen_width, screen_height = 1200, 900
+
+    _observe_objects = False
+    _observe_light = True
+
+    __sim_steps_per_second = 10
+    __sim_velocity_iterations = 10
+    __sim_position_iterations = 10
+    __steps_per_action = 10
+
+    def __new__(cls, **kwargs):
+        cls.sim_steps_per_second = cls.__sim_steps_per_second
+        cls.sim_step = 1. / cls.__sim_steps_per_second
+        cls.world_x_range = -cls.world_width / 2, cls.world_width / 2
+        cls.world_y_range = -cls.world_height / 2, cls.world_height / 2
+        cls.world_bounds = (np.array([-cls.world_width / 2, -cls.world_height / 2]),
+                            np.array([cls.world_width / 2, cls.world_height / 2]))
+
+        return super(KilobotsEnv, cls).__new__(cls)
+
+    def __init__(self, render_mode=None, **kwargs):
+        self.__sim_steps = 0
+        self.__reset_counter = 0
+
+        # create the Kilobots world in Box2D
+        self.world = b2World(gravity=(0, 0), doSleep=True)
+        self.table = self.world.CreateStaticBody(position=(.0, .0))
+        self.table.CreateFixture(
+            shape=b2ChainShape(vertices=[(_world_scale * self.world_x_range[0], _world_scale * self.world_y_range[1]),
+                                         (_world_scale * self.world_x_range[0], _world_scale * self.world_y_range[0]),
+                                         (_world_scale * self.world_x_range[1], _world_scale * self.world_y_range[0]),
+                                         (_world_scale * self.world_x_range[1], _world_scale * self.world_y_range[1])]))
+        self._real_time = False
+
+        # add kilobots
+        self._kilobots: [Kilobot] = []
+        # add objects
+        self._objects: [Body] = []
+        # add light
+        self._light: Light = None
+
+        self.__seed = 0
+
+        self._screen = None
+        self.render_mode = 'human'
+        self.video_path = None
+
+        self._configure_environment()
+        self._kilobots = []
+
+        # Define default observation and action spaces
+        self.observation_space = spaces.Box(
+            low=-np.inf, high=np.inf, shape=(1,), dtype=np.float32
+        )  # Placeholder, should be overridden by subclasses
+        self.action_space = spaces.Box(
+            low=-1.0, high=1.0, shape=(1,), dtype=np.float32
+        )  # Placeholder, should be overridden by subclasses
+
+        self._step_world()
+
+    @property
+    def _sim_steps(self):
+        return self.__sim_steps
+
+    @property
+    def kilobots(self):
+        return tuple(self._kilobots)
+
+    @property
+    def num_kilobots(self):
+        return len(self._kilobots)
+
+    @property
+    def objects(self):
+        return tuple(self._objects)
+
+    @property
+    def _steps_per_action(self):
+        return self.__steps_per_action
+
+    def _add_kilobot(self, kilobot: Kilobot):
+        self._kilobots.append(kilobot)
+
+    def _add_object(self, body: Body):
+        self._objects.append(body)
+
+    @abc.abstractmethod
+    def _configure_environment(self):
+        raise NotImplementedError
+
+    def get_state(self):
+        return {'kilobots': np.array([k.get_state() for k in self._kilobots]),
+                'objects': np.array([o.get_state() for o in self._objects]),
+                'light': self._light.get_state()}
+
+    def get_observation(self):
+        # Flatten the state dictionary into a single NumPy array
+        kilobots_state = np.array([k.get_state() for k in self._kilobots], dtype=np.float32).flatten()
+        objects_state = np.array([o.get_state() for o in self._objects], dtype=np.float32).flatten()
+        light_state = np.array(self._light.get_state(), dtype=np.float32).flatten() if self._light else np.array([], dtype=np.float32)
+
+        # Concatenate all components into a single observation array
+        return np.concatenate([kilobots_state, objects_state, light_state]).astype(np.float32)
+
+    @abc.abstractmethod
+    def get_reward(self, state, action, new_state):
+        raise NotImplementedError
+
+    def has_finished(self, state, action):
+        return False
+
+    def get_info(self, state, action):
+        # Ensure the method always returns a dictionary
+        return {}  # Explicitly return an empty dictionary
+
+    def destroy(self):
+        del self._objects[:]
+        del self._kilobots[:]
+        del self._light
+        self._light = None
+        if self._screen is not None:
+            del self._screen
+            self._screen = None
+
+    def close(self):
+        self.destroy()
+
+    def seed(self, seed=None):
+        if seed is not None:
+            self.__seed = seed
+        return [self.__seed]
+
+    def reset(self, *, seed=None, options=None):
+        # Handle the seed for random number generation
+        if seed is not None:
+            self.seed(seed)
+
+        # Handle options (if any)
+        if options is not None:
+            # Process options if needed
+            pass
+
+        self.__reset_counter += 1
+        self.destroy()
+        self._configure_environment()
+        self.__sim_steps = 0
+
+        # Step to resolve initial state
+        self._step_world()
+
+        # Get observation
+        observation = self.get_observation()
+
+        # Return observation and an empty info dictionary
+        info = {}
+        return observation, info
+
+    def step(self, action: np.ndarray):
+        # if self.action_space and action is not None:
+        #     assert self.action_space.contains(action), "%r (%s) invalid " % (action, type(action))
+
+        # state before action is applied
+        state = self.get_state()
+
+        for i in range(self.__steps_per_action):
+            _t_step_start = time.time()
+            # step light
+            if action is not None and self._light:
+                self._light.step(action, self.sim_step)
+
+            if self._light:
+                # compute light values and gradients
+                sensor_positions = np.array([kb.light_sensor_pos() for kb in self._kilobots])
+                values, gradients = self._light.value_and_gradients(sensor_positions)
+
+                for kb, v, g in zip(self._kilobots, values, gradients):
+                    kb.set_light_value_and_gradient(v, g)
+
+            # step kilobots
+            for k in self._kilobots:
+                k.step(self.sim_step)
+
+            # step world
+            self.world.Step(self.sim_step, self.__sim_velocity_iterations, self.__sim_position_iterations)
+            self.world.ClearForces()
+
+            self.__sim_steps += 1
+
+            if self._screen is not None:
+                self.render(self.render_mode)
+
+            _t_step_end = time.time()
+
+            if self._real_time:
+                time.sleep(max(self.sim_step - (_t_step_end - _t_step_start), .0))
+
+        # state
+        next_state = self.get_state()
+
+        # observation
+        observation = self.get_observation()
+
+        # reward
+        reward = self.get_reward(state, action, next_state)
+
+        # done (split into terminated and truncated)
+        terminated = bool(self.has_finished(next_state, action))  # Ensure Python bool
+        truncated = bool(False)  # Add logic for truncation if needed
+
+        # info
+        info = self.get_info(next_state, action)
+        if not isinstance(info, dict):  # Ensure info is always a dictionary
+            info = {}
+
+        return observation, reward, terminated, truncated, info
+
+    def _step_world(self):
+        self.world.Step(self.sim_step, self.__sim_velocity_iterations, self.__sim_position_iterations)
+        self.world.ClearForces()
+
+    def render(self, mode=None):
+        # if close:
+        #     if self._screen is not None:
+        #         self._screen.close()
+        #         self._screen = None
+        #     return
+        if mode is None:
+            mode = self.render_mode
+
+        from gym_kilobots import kb_rendering
+        if self._screen is None:
+            caption = self.spec.id if self.spec else ""
+            if self.video_path:
+                import os
+                os.makedirs(self.video_path, exist_ok=True)
+                _video_path = os.path.join(self.video_path, str(self.__reset_counter) + '.mp4')
+            else:
+                _video_path = None
+
+            self._screen = kb_rendering.KilobotsViewer(self.screen_width, self.screen_height, caption=caption,
+                                                       display=mode == 'human', record_to=_video_path)
+            world_min, world_max = self.world_bounds
+            self._screen.set_bounds(world_min[0], world_max[0], world_min[1], world_max[1])
+        elif self._screen.close_requested():
+            self._screen.close()
+            self._screen = None
+            # TODO how to handle this event?
+
+        # render table
+        x_min, x_max = self.world_x_range
+        y_min, y_max = self.world_y_range
+        self._screen.draw_polygon([(x_min, y_max), (x_min, y_min), (x_max, y_min), (x_max, y_max)],
+                                  color=(255, 255, 255))
+        self._screen.draw_polyline([(x_min, y_max), (x_min, y_min), (x_max, y_min), (x_max, y_max), (x_min, y_max)],
+                                   width=.003)
+
+        # allow to draw on table
+        self._draw_on_table(self._screen)
+
+        # render objects
+        for o in self._objects:
+            o.draw(self._screen)
+
+        # render kilobots
+        for kb in self._kilobots:
+            kb.draw(self._screen)
+
+        # render light
+        if self._light is not None:
+            self._light.draw(self._screen)
+
+        # allow to draw on top
+        self._draw_on_top(self._screen)
+
+        self._screen.render()
+
+    def get_objects(self) -> [Body]:
+        return self._objects
+
+    def get_kilobots(self) -> [Kilobot]:
+        return self._kilobots
+
+    def get_light(self) -> Light:
+        return self._light
+
+    def _draw_on_table(self, screen):
+        pass
+
+    def _draw_on_top(self, screen):
+        pass
+
+
+class UnknownObjectException(Exception):
+    pass
+
+
+class UnknownLightTypeException(Exception):
+    pass
+</file>
+
+<file path="gym_kilobots/envs/kilobots_test_envs.py">
+from .kilobots_env import KilobotsEnv
+
+import numpy as np
+from scipy import stats
+from gymnasium import spaces  # Import spaces from gymnasium
+
+from ..lib.body import CornerQuad, Triangle, LForm, CForm, TForm
+from ..lib.kilobot import PhototaxisKilobot, SimplePhototaxisKilobot
+from ..lib.light import CircularGradientLight
+
+
+class QuadPushingEnv(KilobotsEnv):
+    world_size = world_width, world_height = 1., .5
+
+    def __init__(self):
+        # distribution for sampling swarm position
+        self._swarm_spawn_distribution = stats.uniform(loc=(-.95, -.7), scale=(.9, 1.4))
+        # distribution for sampling the pushing object
+        self._obj_spawn_distribution = stats.uniform(loc=(.05, -.7), scale=(.9, .65))
+
+        super().__init__()
+
+
+class QuadAssemblyKilobotsEnv(KilobotsEnv):  # Ensure this class is defined
+    def __init__(self, render_mode=None):
+        # Initialize attributes before calling super().__init__()
+        self._swarm_spawn_distribution = stats.uniform(loc=(-.95, -.7), scale=(.9, 1.4))
+        self._obj_spawn_distribution = stats.uniform(loc=(.05, -.7), scale=(.9, .65))
+        super().__init__(render_mode=render_mode)  # Pass render_mode to the parent class
+
+        # Define observation space based on kilobots and objects
+        num_kilobots = 5  # Number of kilobots
+        num_objects = 4  # Number of objects
+        kilobot_obs_dim = 2  # x, y positions
+        object_obs_dim = 3  # x, y, orientation
+
+        self.observation_space = spaces.Box(
+            low=-np.inf,
+            high=np.inf,
+            shape=(num_kilobots * kilobot_obs_dim + num_objects * object_obs_dim,),
+            dtype=np.float32,
+        )
+
+        self.action_space = spaces.Box(
+            low=-1.0, high=1.0, shape=(2,), dtype=np.float32
+        )  # Example action space for light control
+
+    def _configure_environment(self):
+        swarm_spawn_location = self._swarm_spawn_distribution.rvs()
+        obj_spawn_location = self._obj_spawn_distribution.rvs()
+
+        self._objects = [
+            CornerQuad(world=self.world, width=.15, height=.15, position=(.45, .605)),
+            CornerQuad(world=self.world, width=.15, height=.15, position=(.605, .605), orientation=-np.pi / 2),
+            CornerQuad(world=self.world, width=.15, height=.15, position=(.605, .45), orientation=-np.pi),
+            CornerQuad(world=self.world, width=.15, height=.15, position=obj_spawn_location, orientation=-np.pi / 2)
+        ]
+
+        self._light = CircularGradientLight(position=swarm_spawn_location)
+
+        self._kilobots = [
+            PhototaxisKilobot(self.world, position=swarm_spawn_location + (.0, .0), light=self._light),
+            PhototaxisKilobot(self.world, position=swarm_spawn_location + (.03, .0), light=self._light),
+            PhototaxisKilobot(self.world, position=swarm_spawn_location + (.0, .03), light=self._light),
+            PhototaxisKilobot(self.world, position=swarm_spawn_location + (-.03, .0), light=self._light),
+            PhototaxisKilobot(self.world, position=swarm_spawn_location + (.0, -.03), light=self._light)
+        ]
+
+    def has_finished(self, state, action):
+        return False
+
+    def get_reward(self, state, action, new_state):
+        return 1.0
+
+    def get_info(self, state, action):
+        return None
+
+
+class TriangleTestEnv(KilobotsEnv):
+    def _configure_environment(self):
+        self._objects = [Triangle(world=self.world, width=.15, height=.15, position=(.0, .0)),
+                         LForm(world=self.world, width=.15, height=.15, position=(.0, .3)),
+                         TForm(world=self.world, width=.15, height=.15, position=(.0, -.3)),
+                         CForm(world=self.world, width=.15, height=.15, position=(.3, .0))]
+
+    # TODO implement has_finished function
+    def has_finished(self, state, action):
+        return False
+
+    # TODO implement reward function
+    def get_reward(self, state, action, new_state):
+        # compute reward based on task and swarm state
+        return 1.
+
+    # info function
+    def get_info(self, state, action):
+        return None
+</file>
+
+<file path="gym_kilobots/envs/yaml_kilobots_env.py">
+from random import shuffle
+import numpy as np
+import yaml
+from gymnasium import spaces  # Updated to gymnasium
+import gym_kilobots
+from gym_kilobots.lib import (
+    CircularGradientLight, GradientLight, Quad, CornerQuad, Triangle, Circle, LForm, TForm,
+    CForm, CompositeLight
+)
+from gym_kilobots.lib.light import MomentumLight, SinglePositionLight
+from .kilobots_env import KilobotsEnv, UnknownLightTypeException, UnknownObjectException
+
+
+class EnvConfiguration(yaml.YAMLObject):
+    yaml_tag = '!EvalEnv'
+
+    class ObjectConfiguration(yaml.YAMLObject):
+        yaml_tag = '!ObjectConf'
+
+        def __init__(self, idx, color, shape, width, height, init, symmetry):
+            self.idx = idx
+            self.shape = shape
+            self.width = width
+            self.height = height
+            self.init = init
+            self.color = color
+            self.symmetry = symmetry
+
+        def __eq__(self, other):
+            for k in self.__dict__:
+                if k not in other.__dict__:
+                    return False
+                if not self.__getattribute__(k) == other.__getattribute__(k):
+                    return False
+            return True
+
+        @property
+        def object_type(self):
+            _type = self.shape
+            if _type in ['corner_quad', 'corner-quad', 'quad']:
+                _type = 'square'
+            return _type
+
+    class LightConfiguration(yaml.YAMLObject):
+        yaml_tag = '!LightConf'
+
+        def __init__(self, obj_type, init, radius=None):
+            self.type = obj_type
+            self.init = init
+            self.radius = radius
+
+        def __eq__(self, other):
+            for k in self.__dict__:
+                if k not in other.__dict__:
+                    return False
+                if not self.__getattribute__(k) == other.__getattribute__(k):
+                    return False
+            return True
+
+    class KilobotsConfiguration(yaml.YAMLObject):
+        yaml_tag = '!KilobotsConf'
+
+        def __init__(self, num, mean, std, type='SimplePhototaxisKilobot'):
+            self.num = num
+            self.mean = mean
+            self.std = std
+            self.type = type
+
+        def __eq__(self, other):
+            for k in self.__dict__:
+                if k not in other.__dict__:
+                    return False
+                if not self.__getattribute__(k) == other.__getattribute__(k):
+                    return False
+            return True
+
+    def __init__(self, width, height, resolution, objects, light, kilobots):
+        self.width = width
+        self.height = height
+        self.resolution = resolution
+        self.objects = [self.ObjectConfiguration(**obj) for obj in objects]
+        self.light = self.LightConfiguration(**light)
+        self.kilobots = self.KilobotsConfiguration(**kilobots)
+
+    def __eq__(self, other):
+        for k in self.__dict__:
+            if k not in other.__dict__:
+                return False
+            if not self.__getattribute__(k) == other.__getattribute__(k):
+                return False
+        return True
+
+
+def rot_matrix(alpha):
+    return np.array([[np.cos(alpha), -np.sin(alpha)],
+                     [np.sin(alpha), np.cos(alpha)]])
+
+
+class YamlKilobotsEnv(KilobotsEnv):
+    def __new__(cls, *, configuration, **kwargs):
+        cls.world_width = configuration.width
+        cls.world_height = configuration.height
+        cls.world_size = cls.world_width, cls.world_height
+
+        cls.screen_width = int(configuration.resolution * configuration.width)
+        cls.screen_height = int(configuration.resolution * configuration.height)
+        cls.screen_size = cls.screen_width, cls.screen_width
+
+        return super(YamlKilobotsEnv, cls).__new__(cls, **kwargs)
+
+    def __eq__(self, other):
+        return self.conf == other.conf
+
+    def __init__(self, *, configuration, **kwargs):
+        self.conf = configuration
+        self._progress_factor = 1.
+        self._iteration_counter = 0
+
+        super().__init__(**kwargs)
+
+    @property
+    def progress_factor(self):
+        return self._progress_factor
+
+    @progress_factor.setter
+    def progress_factor(self, pf):
+        assert .0 <= pf <= 1., 'progress_factor must be a value in the range [.0, 1.]'
+        self._progress_factor = pf
+
+    @property
+    def iteration_counter(self):
+        return self._iteration_counter
+
+    @iteration_counter.setter
+    def iteration_counter(self, ic):
+        assert isinstance(ic, int) and 0 <= ic, 'iteration_counter must be a positive integer'
+        self._iteration_counter = ic
+
+    def inc_iteration_counter(self):
+        self._iteration_counter += 1
+
+    def _configure_environment(self):
+        self._init_objects()
+        self._init_light()
+        self._init_kilobots()
+
+    @property
+    def state_space(self):
+        _state_space_low = self.kilobots_state_space.low
+        _state_space_high = self.kilobots_state_space.high
+        if self.light_state_space:
+            _state_space_low = np.concatenate((_state_space_low, self.light_state_space.low))
+            _state_space_high = np.concatenate((_state_space_high, self.light_state_space.high))
+        if self.object_state_space:
+            _state_space_low = np.concatenate((_state_space_low, self.object_state_space.low))
+            _state_space_high = np.concatenate((_state_space_high, self.object_state_space.high))
+
+        return spaces.Box(low=_state_space_low, high=_state_space_high, dtype=np.float32)
+
+    @property
+    def observation_space(self):
+        _observation_spaces_low = self.kilobots_state_space.low
+        _observation_spaces_high = self.kilobots_state_space.high
+        if self.light_observation_space:
+            _observation_spaces_low = np.concatenate((_observation_spaces_low, self.light_observation_space.low))
+            _observation_spaces_high = np.concatenate((_observation_spaces_high, self.light_observation_space.high))
+        if self.object_observation_space:
+            # the objects are observed as x, y, sin(theta), cos(theta)
+            obj_obs_space = self.object_observation_space
+            _observation_spaces_low = np.concatenate((_observation_spaces_low, obj_obs_space.low))
+            _observation_spaces_high = np.concatenate((_observation_spaces_high, obj_obs_space.high))
+
+        return spaces.Box(low=_observation_spaces_low, high=_observation_spaces_high,
+                          dtype=np.float32)
+
+    def _init_objects(self):
+        for o in self.conf.objects:
+            self._init_object(o.shape, o.width, o.height, o.init, o.color)
+
+    @property
+    def object_state_space(self):
+        objects_low = np.array([self.world_x_range[0], self.world_y_range[0], -np.inf] * len(self._objects))
+        objects_high = np.array([self.world_x_range[1], self.world_y_range[1], np.inf] * len(self._objects))
+        return spaces.Box(low=objects_low, high=objects_high, dtype=np.float64)
+
+    @property
+    def object_observation_space(self):
+        objects_obs_low = np.array([self.world_x_range[0], self.world_y_range[0], -1., -1.] * len(self._objects))
+        objects_obs_high = np.array([self.world_x_range[1], self.world_y_range[1], 1., 1.] * len(self._objects))
+        return spaces.Box(low=objects_obs_low, high=objects_obs_high, dtype=np.float64)
+
+    def _get_random_object_init(self):
+        init_position = np.random.rand(2) * np.asarray(self.world_size) + self.world_bounds[0]
+        init_position *= 0.7
+        init_orientation = np.random.rand() * 2 * np.pi - np.pi
+        return np.r_[init_position, init_orientation]
+
+    def _init_object(self, object_shape, object_width, object_height, object_init, object_color=None):
+        if object_init == 'random':
+            object_init = self._get_random_object_init()
+            # other_obj_pos = np.array([o.get_position() for o in self._objects])
+            # _counter = 0
+            # while True:
+            #     object_init = self._get_random_object_init()
+            #     if len(self._objects) == 0:
+            #         break
+            #     dists = np.linalg.norm(other_obj_pos - object_init[:2], axis=1)
+            #     if np.all(dists > np.max((object_width, object_height))):
+            #         break
+            #     _counter += 1
+            #     if _counter > 30:
+            #         raise Exception('Could not find init position for object after 30 iterations.')
+
+        if object_shape in ['square', 'quad', 'rect']:
+            obj = Quad(width=object_width, height=object_height,
+                       position=object_init[:2], orientation=object_init[2],
+                       world=self.world)
+        elif object_shape in ['corner_quad', 'corner-quad']:
+            obj = CornerQuad(width=object_width, height=object_height,
+                             position=object_init[:2], orientation=object_init[2],
+                             world=self.world)
+        elif object_shape == 'triangle':
+            obj = Triangle(width=object_width, height=object_height,
+                           position=object_init[:2], orientation=object_init[2],
+                           world=self.world)
+        elif object_shape == 'circle':
+            obj = Circle(radius=object_width, position=object_init[:2],
+                         orientation=object_init[2], world=self.world)
+        elif object_shape == 'l_shape':
+            obj = LForm(width=object_width, height=object_height,
+                        position=object_init[:2], orientation=object_init[2],
+                        world=self.world)
+        elif object_shape == 't_shape':
+            obj = TForm(width=object_width, height=object_height,
+                        position=object_init[:2], orientation=object_init[2],
+                        world=self.world)
+        elif object_shape == 'c_shape':
+            obj = CForm(width=object_width, height=object_height,
+                        position=object_init[:2], orientation=object_init[2],
+                        world=self.world)
+        else:
+            raise UnknownObjectException('Shape of form {} not known.'.format(object_shape))
+
+        if object_color:
+            obj.color = object_color
+        self._add_object(obj)
+
+    def _init_light(self):
+        if not hasattr(self.conf, 'light'):
+            return
+
+        self._light = self._init_light_from_config(self.conf.light)
+
+    def _get_random_light_init(self, at_object=False):
+        if at_object:
+            which_object = self._objects[np.random.choice(len(self._objects), 1)[0]]
+            init_position = which_object.get_position()
+            radius = 1.2 * max(which_object.width, which_object.height) / 2
+            angle = np.random.rand() * 2 * np.pi - np.pi
+            init_position += (np.cos(angle) * radius, np.sin(angle) * radius)
+        else:
+            init_position = np.random.rand(2) * np.asarray(self.world_size) + self.world_bounds[0]
+        return init_position
+
+    def _init_light_from_config(self, light_config):
+        light = None
+        if light_config.type in ['circular', 'momentum']:
+            light_bounds = np.array(self.world_bounds) * 1.1
+
+            if light_config.init == 'random':
+                init_position = self._get_random_light_init()
+            elif light_config.init == 'object':
+                init_position = self._get_random_light_init(at_object=True)
+            else:
+                init_position = light_config.init
+
+            if light_config.type == 'circular':
+                action_bounds = np.array([-1, -1]) * .01, np.array([1, 1]) * .01
+                light = CircularGradientLight(position=init_position, radius=light_config.radius,
+                                              bounds=light_bounds, action_bounds=action_bounds)
+            elif light_config.type == 'momentum':
+                init_angle = np.random.rand() * 2 * np.pi - np.pi
+                init_velocity = np.array([np.sin(init_angle), np.cos(init_angle)]) * .01
+                max_velocity = .01
+                action_bounds = np.array([-1, -1]) * .01, np.array([1, 1]) * .01
+                light = MomentumLight(position=init_position, velocity=init_velocity,
+                                      max_velocity=max_velocity, radius=light_config.radius,
+                                      bounds=light_bounds, action_bounds=action_bounds)
+
+        elif light_config.type == 'linear':
+            # sample initial angle from a uniform between -pi and pi
+            light = GradientLight(angle=light_config.init)
+
+        elif light_config.type == 'composite':
+            lights = []
+            if light_config.init == 'random':
+                shuffle(light_config.components)
+            for _c in light_config.components:
+                lights.append(self._init_light_from_config(_c))
+            light = CompositeLight(lights)
+
+        else:
+            raise UnknownLightTypeException()
+
+        return light
+
+    @property
+    def action_space(self):
+        if self._light:
+            return self._light.action_space
+        return None
+
+    @property
+    def light_state_space(self):
+        if self._light:
+            return self._light.observation_space
+        return None
+
+    @property
+    def light_observation_space(self):
+        if self._light and self._observe_light:
+            return self._light.observation_space
+        return None
+
+    def _init_kilobots(self, type='SimplePhototaxisKilobot'):
+        num_kilobots = self.conf.kilobots.num
+        spawn_mean = self.conf.kilobots.mean
+        spawn_std = self.conf.kilobots.std
+
+        if isinstance(spawn_mean, str) and spawn_mean == 'light':
+            if isinstance(self._light, SinglePositionLight):
+                spawn_mean = self._light.get_position()
+            elif isinstance(self._light, CompositeLight):
+                lights_positions = np.asarray([_l.get_position() for _l in self._light.lights])
+                idx = np.random.choice(np.arange(len(lights_positions)), num_kilobots)
+                spawn_mean = lights_positions[idx]
+            else:
+                spawn_mean = 'random'
+        if isinstance(spawn_mean, str) and spawn_mean == 'random':
+            spawn_mean = np.random.rand(2) * np.asarray(self.world_size) + self.world_bounds[0]
+            spawn_mean *= 0.9
+
+        # draw the kilobots positions from a normal with mean and variance selected above
+        kilobot_positions = np.random.normal(scale=spawn_std, size=(num_kilobots, 2))
+        kilobot_positions += spawn_mean
+
+        # assert for each kilobot that it is within the world bounds and add kilobot to the world
+        for position in kilobot_positions:
+            position = np.maximum(position, self.world_bounds[0] + 0.02)
+            position = np.minimum(position, self.world_bounds[1] - 0.02)
+            kb_class = getattr(gym_kilobots.lib, type)
+            self._add_kilobot(kb_class(self.world, position=position, light=self._light))
+
+    @property
+    def kilobots_state_space(self):
+        kb_low = np.array([self.world_x_range[0], self.world_y_range[0]] * len(self._kilobots))
+        kb_high = np.array([self.world_x_range[1], self.world_y_range[1]] * len(self._kilobots))
+        return spaces.Box(low=kb_low, high=kb_high, dtype=np.float64)
+
+    @property
+    def kilobots_observation_space(self):
+        kb_low = np.array([self.world_x_range[0], self.world_y_range[0]] * len(self._kilobots))
+        kb_high = np.array([self.world_x_range[1], self.world_y_range[1]] * len(self._kilobots))
+        return spaces.Box(low=kb_low, high=kb_high, dtype=np.float64)
+
+    def get_reward(self, state, action, new_state):
+        return .0
+</file>
+
+<file path="gym_kilobots/lib/__init__.py">
+from .kilobot import Kilobot, PhototaxisKilobot, SimplePhototaxisKilobot, SimpleVelocityControlKilobot,\
+    SimpleAccelerationControlKilobot
+from .body import Body, Quad, CornerQuad, Triangle, Circle, CForm, TForm, LForm
+from .light import CircularGradientLight, GradientLight, CompositeLight
+</file>
+
+<file path="gym_kilobots/lib/body.py">
+import abc
+
+import numpy as np
+import Box2D
+
+
+_world_scale = 25.
+
+
+class Body:
+    _density = 2
+    _friction = 0.01
+    _restitution = 0.0
+
+    _linear_damping = .8  # * _world_scale
+    _angular_damping = .8  # * _world_scale
+
+    def __init__(self, world: Box2D.b2World, position=None, orientation=None):
+        if self.__class__ == Body:
+            raise NotImplementedError('Abstract class Body cannot be instantiated.')
+        self._color = np.array((93, 133, 195))
+        self._highlight_color = np.array((238, 80, 62))
+
+        if position is None:
+            position = [.0, .0]
+        position = np.asarray(position)
+
+        if orientation is None:
+            orientation = .0
+
+        self._world = world
+        self._body: Box2D.b2Body = world.CreateDynamicBody(
+            position=Box2D.b2Vec2(*(_world_scale * position)),
+            angle=orientation,
+            linearDamping=self._linear_damping,
+            angularDamping=self._angular_damping)
+        self._body.linearVelocity = Box2D.b2Vec2(*[.0, .0])
+        self._body.angularVelocity = .0
+
+    @property
+    def width(self):
+        raise NotImplementedError
+
+    @property
+    def height(self):
+        raise NotImplementedError
+
+    def __del__(self):
+        self._world.DestroyBody(self._body)
+
+    def get_position(self):
+        return np.asarray(self._body.position) / _world_scale
+
+    def set_position(self, position):
+        self._body.position = position * _world_scale
+
+    def get_orientation(self):
+        return self._body.angle
+
+    def set_orientation(self, orientation):
+        self._body.angle = orientation
+
+    def get_pose(self):
+        position = np.asarray(self._body.position) / _world_scale
+        return tuple((*position, self._body.angle))
+
+    def set_pose(self, pose):
+        self.set_position(pose[:2])
+        self.set_orientation(pose[2])
+
+    def get_state(self):
+        return self.get_pose()
+        # return tuple((*self._body.position, self._body.angle))
+
+    def get_local_point(self, point):
+        return np.asarray(self._body.GetLocalPoint(_world_scale * np.asarray(point))) / _world_scale
+
+    def get_local_orientation(self, angle):
+        return angle - self._body.angle
+
+    def get_local_pose(self, pose):
+        return tuple((*self.get_local_point(pose[:2]), self.get_local_orientation(pose[2])))
+
+    def get_world_point(self, point):
+        return np.asarray(self._body.GetWorldPoint(_world_scale * np.asarray(point))) / _world_scale
+
+    def collides_with(self, other):
+        for contact_edge in self._body.contacts_gen:
+            if contact_edge.other == other and contact_edge.contact.touching:
+                return True
+
+    # def set_color(self, color):
+    #     self._color = color
+    #
+    # def set_highlight_color(self, color):
+    #     self._highlight_color = color
+
+    @property
+    def color(self):
+        return self._color
+
+    @color.setter
+    def color(self, color):
+        color = np.asarray(color, dtype=np.int32)
+        color = np.maximum(color, np.zeros_like(color, dtype=np.int32))
+        color = np.minimum(color, np.full_like(color, 255, dtype=np.int32))
+        self._color = color
+
+    @property
+    def highlight_color(self):
+        return self._highlight_color
+
+    @highlight_color.setter
+    def highlight_color(self, color):
+        color = np.asarray(color, dtype=np.int32)
+        color = np.maximum(color, np.zeros_like(color, dtype=np.int32))
+        color = np.minimum(color, np.full_like(color, 255, dtype=np.int32))
+        self._highlight_color = color
+
+    @abc.abstractmethod
+    def draw(self, viewer):
+        raise NotImplementedError('The draw method needs to be implemented by the subclass of Body.')
+
+    @abc.abstractmethod
+    def plot(self, axes, **kwargs):
+        raise NotImplementedError('The plot method needs to be implemented by the subclass of Body.')
+
+
+class Quad(Body):
+    def __init__(self, width, height, **kwargs):
+        super().__init__(**kwargs)
+
+        self._width = width
+        self._height = height
+
+        self._fixture = self._body.CreatePolygonFixture(
+            box=Box2D.b2Vec2(self._width/2 * _world_scale, self._height/2 * _world_scale),
+            density=self._density,
+            friction=self._friction,
+            restitution=self._restitution,
+            # radius=.000001
+        )
+
+    @property
+    def width(self):
+        return self._width
+
+    @property
+    def height(self):
+        return self._height
+
+    @property
+    def vertices(self):
+        return np.asarray([[self._body.GetWorldPoint(v) for v in self._fixture.shape.vertices]]) / _world_scale
+
+    def draw(self, viewer):
+        viewer.draw_polygon(self.vertices[0], filled=True, color=self._color)
+
+    def plot(self, axes, **kwargs):
+        from gym_kilobots.kb_plotting import plot_rect
+        return plot_rect(axes, self, **kwargs)
+
+    def get_width(self):
+        return self._width
+
+    def get_height(self):
+        return self._height
+
+
+class CornerQuad(Quad):
+    def draw(self, viewer):
+        super(CornerQuad, self).draw(viewer)
+
+        viewer.draw_polygon(self.vertices[0][0:3], filled=True, color=self._highlight_color)
+
+    def plot(self, axes, **kwargs):
+        from gym_kilobots.kb_plotting import plot_rect
+        return plot_rect(axes, self, highlight_corner=True, **kwargs)
+
+
+class Circle(Body):
+    def __init__(self, radius, **kwargs):
+        super().__init__(**kwargs)
+
+        self._radius = radius
+
+        self._fixture = self._body.CreateCircleFixture(
+            radius=self._radius * _world_scale,
+            density=self._density,
+            friction=self._friction,
+            restitution=self._restitution
+        )
+
+    @property
+    def width(self):
+        return 2 * self._radius
+
+    @property
+    def height(self):
+        return 2 * self._radius
+
+    def draw(self, viewer):
+        viewer.draw_aacircle(position=self.get_position(), radius=self._radius, color=self._color)
+
+    @property
+    def vertices(self):
+        return np.array([[self.get_position()]])
+
+    def get_radius(self):
+        return self._radius
+
+    def plot(self, axes, **kwargs):
+        from gym_kilobots.kb_plotting import plot_circle
+        return plot_circle(axes, self, **kwargs)
+
+
+class Polygon(Body):
+    def __init__(self, width: float, height: float, **kwargs):
+        super().__init__(**kwargs)
+
+        self._width = width
+        self._height = height
+
+        # TODO: right now this assumes that all subpolygons have the same number of edges
+        # TODO: rewrite such that arbitrary subpolygons can be used here
+        vertices = self._shape_vertices()
+
+        v_size = np.amax(vertices, (0, 1)) - np.amin(vertices, (0, 1))
+        vertices /= v_size
+        vertices *= np.array((width, height))
+
+        centroid = np.zeros(2)
+        area = .0
+        for vs in vertices:
+            # compute centroid of polygon
+            a = 0.5 * np.abs(np.dot(vs[:, 0], np.roll(vs[:, 1], 1)) - np.dot(vs[:, 1], np.roll(vs[:, 0], 1)))
+            area += a
+            centroid += vs.mean(axis=0) * a
+        centroid /= area
+
+        self.__local_vertices = vertices - centroid
+        self.__local_vertices.setflags(write=False)
+
+        for v in self.__local_vertices:
+            self._body.CreatePolygonFixture(
+                shape=Box2D.b2PolygonShape(vertices=(v * _world_scale).tolist()),
+                density=self._density,
+                friction=self._friction,
+                restitution=self._restitution,
+                # radius=.00000001
+            )
+
+        self._fixture = self._body.fixtures
+
+    @property
+    def width(self):
+        return self._width
+
+    @property
+    def height(self):
+        return self._height
+
+    @property
+    def vertices(self):
+        return np.array([[self.get_world_point(v) for v in vertices] for vertices in self.__local_vertices])
+
+    @property
+    def local_vertices(self):
+        return self.__local_vertices
+
+    @property
+    def plot_vertices(self):
+        raise NotImplementedError
+
+    @staticmethod
+    def _shape_vertices() -> np.ndarray:
+        raise NotImplementedError
+
+    def draw(self, viewer):
+        for vertices in self.vertices:
+            viewer.draw_polygon(vertices, filled=True, color=self._color)
+
+    def plot(self, axes, **kwargs):
+        from gym_kilobots.kb_plotting import plot_polygon
+        return plot_polygon(axes, self, **kwargs)
+
+
+class Triangle(Polygon):
+    @staticmethod
+    def _shape_vertices():
+        return np.array([[(-0.5, 0.0),
+                          (0.0, 0.0),
+                          (0.0, 1.0)]])
+
+    @property
+    def plot_vertices(self):
+        return self.vertices.reshape((-1, 2))
+
+
+class LForm(Polygon):
+    @staticmethod
+    def _shape_vertices():
+        return np.array([[(-0.05, 0.0), (0.1, 0.0), (0.1, 0.3), (-0.05, 0.3)],
+                         [(0.1, 0.0), (0.1, -0.15), (-0.2, -0.15), (-0.2, 0.0)]])
+
+    @property
+    def plot_vertices(self):
+        vertices = self.vertices.reshape((-1, 2))
+        return vertices[[0, 7, 6, 5, 2, 3], :]
+
+
+class TForm(Polygon):
+    @staticmethod
+    def _shape_vertices():
+        return np.array([[(0.0, 0.15), (0.2, 0.15), (0.2, -0.15), (0.0, -0.15)],
+                         [(0.0, 0.05), (0.0, -0.05), (-0.2, -0.05), (-0.2, 0.05)]])
+
+    @property
+    def plot_vertices(self):
+        vertices = self.vertices.reshape((-1, 2))
+        return vertices[[0, 1, 2, 3, 5, 6, 7, 4], :]
+
+
+class CForm(Polygon):
+    @staticmethod
+    def _shape_vertices():
+        return np.array([[(0.09, 0.15), (0.09, -0.15), (-0.01, -0.15), (-0.01, 0.15,)],
+                         [(-0.01, -0.15), (-0.11, -0.15), (-0.11, -0.08), (-0.01, -0.05)],
+                         [(-0.01, 0.15), (-0.11, 0.15), (-0.11, 0.08), (-0.01, 0.05)]])
+
+    @property
+    def plot_vertices(self):
+        vertices = self.vertices.reshape((-1, 2))
+        return vertices[[0, 1, 5, 6, 7, 11, 10, 9], :]
+</file>
+
+<file path="gym_kilobots/lib/kilobot.py">
+import numpy as np
+from Box2D import b2Vec2
+from gymnasium import spaces
+
+from .body import Circle, _world_scale
+
+
+class Kilobot(Circle):
+    _radius = 0.0165
+
+    _leg_front = np.array([.0, _radius])
+    _leg_left = np.array([-0.013, -.009])
+    _leg_right = np.array([+0.013, -.009])
+    _light_sensor = np.array([.0, -_radius+.001])
+    _led = np.array([.011, .01])
+
+    # _impulse_right_dir = _leg_front - _leg_right
+    # _impulse_left_dir = _leg_front - _leg_left
+    # _impulse_right_point_body = (_leg_front + _leg_right) / 2
+    # _impulse_left_point_body = (_leg_front + _leg_left) / 2
+
+    _max_linear_velocity = 0.01  # meters / s
+    _max_angular_velocity = 0.5 * np.pi  # radians / s
+
+    _density = 1.0
+    _friction = 0.0
+    _restitution = 0.0
+
+    _linear_damping = .8  #* _world_scale
+    _angular_damping = .8  #* _world_scale
+
+    def __init__(self, world, position=None, orientation=None, light=None):
+        # all parameters in real world units
+        super().__init__(world=world, position=position, orientation=orientation, radius=self._radius)
+
+        # 0 .. 255
+        self._motor_left = 0
+        self._motor_right = 0
+        self.__light_measurement = 0
+        self.__turn_direction = None
+
+        self._body_color = (150, 150, 150)
+        self._highlight_color = (255, 255, 255)
+
+        self._light_value = None
+        self._light_gradient = None
+
+        self._setup()
+
+    def set_light_value_and_gradient(self, value, gradient):
+        self._light_value = value
+        self._light_gradient = gradient
+
+    def light_sensor_pos(self):
+        return self.get_world_point((0.0, -self._radius))
+
+    def get_ambientlight(self):
+        if self._light_value:
+            return self._light_value
+        else:
+            return 0
+
+    def set_motors(self, left, right):
+        self._motor_left = left
+        self._motor_right = right
+
+    def switch_directions(self):
+        if self.__turn_direction == 'left':
+            self.turn_right()
+        else:
+            self.turn_left()
+
+    def turn_right(self):
+        self.__turn_direction = 'right'
+        self.set_motors(0, 255)
+        self.set_color((255, 0, 0))
+
+    def turn_left(self):
+        self.__turn_direction = 'left'
+        self.set_motors(255, 0)
+        self.set_color((0, 255, 0))
+
+    def set_color(self, color):
+        self._highlight_color = color
+
+    def step(self, time_step):
+        # loop kilobot logic
+        self._loop()
+
+        cos_dir = np.cos(self.get_orientation())
+        sin_dir = np.sin(self.get_orientation())
+
+        linear_velocity = [.0, .0]
+        angular_velocity = .0
+
+        # compute new kilobot position or kilobot velocity
+        if self._motor_left and self._motor_right:
+            linear_velocity = (self._motor_right + self._motor_left) / 510. * self._max_linear_velocity
+            linear_velocity = [sin_dir * linear_velocity, cos_dir * linear_velocity]
+
+            angular_velocity = (self._motor_right - self._motor_left) / 510. * self._max_angular_velocity
+
+        elif self._motor_right:
+            angular_velocity = self._motor_right / 255. * self._max_angular_velocity
+            angular_displacement = angular_velocity * time_step
+
+            c, s = np.cos(angular_displacement), np.sin(angular_displacement)
+            R = [[c, -s], [s, c]]
+
+            translation = self._leg_left - np.dot(R, self._leg_left)
+            linear_velocity = self._body.GetWorldVector(translation * _world_scale) / _world_scale / time_step
+
+        elif self._motor_left:
+            angular_velocity = -self._motor_left / 255. * self._max_angular_velocity
+            angular_displacement = angular_velocity * time_step
+
+            c, s = np.cos(angular_displacement), np.sin(angular_displacement)
+            R = [[c, -s], [s, c]]
+
+            translation = self._leg_right - np.dot(R, self._leg_right)
+            linear_velocity = self._body.GetWorldVector(translation * _world_scale) / _world_scale / time_step
+
+        self._body.angularVelocity = angular_velocity
+        if type(linear_velocity) == np.ndarray:
+            self._body.linearVelocity = b2Vec2(*linear_velocity.astype(float)) * _world_scale
+        else:
+            self._body.linearVelocity = linear_velocity * _world_scale
+
+    def draw(self, viewer):
+        # super(Kilobot, self).draw(viewer)
+        # viewer.draw_circle(position=self._body.position, radius=self._radius, color=(50,) * 3, filled=False)
+        viewer.draw_aacircle(position=self.get_position(), radius=self._radius + .002, color=self._body_color)
+        viewer.draw_aacircle(position=self.get_position(), radius=self._radius + .002, color=(100, 100, 100),
+                             filled=False, width=.005)
+
+        # draw direction as triangle with color set by function
+        front = self.get_world_point((self._radius - .005, 0.0))
+        # w = 0.1 * self._radius
+        # h = np.cos(np.arcsin(w)) - self._radius
+        # bottom_left = self._body.GetWorldPoint((-0.006, -0.009))
+        # bottom_right = self._body.GetWorldPoint((0.006, -0.009))
+        middle = self.get_position()
+
+        # viewer.draw_polygon(vertices=(top, bottom_left, bottom_right), color=self._highlight_color)
+        viewer.draw_polyline(vertices=(front, middle), color=self._highlight_color, closed=False, width=.005)
+
+        # t = rendering.Transform(translation=self._body.GetWorldPoint(self._led))
+        # viewer.draw_circle(.003, res=20, color=self._highlight_color).add_attr(t)
+        # viewer.draw_circle(.003, res=20, color=(0, 0, 0), filled=False).add_attr(t)
+
+        # light sensor
+        # viewer.draw_circle(position=self._body.GetWorldPoint(self._light_sensor), radius=.005, color=(0, 0, 0))
+        # viewer.draw_circle(position=self._body.GetWorldPoint(self._light_sensor), radius=.0035, color=(255, 255, 0))
+
+        # draw legs
+        # viewer.draw_circle(position=self._body.GetWorldPoint(self._leg_front), radius=.001, color=(0, 0, 0))
+        # viewer.draw_circle(position=self._body.GetWorldPoint(self._leg_left), radius=.001, color=(0, 0, 0))
+        # viewer.draw_circle(position=self._body.GetWorldPoint(self._leg_right), radius=.001, color=(0, 0, 0))
+
+    @classmethod
+    def get_radius(cls):
+        return cls._radius
+
+    def _setup(self):
+        raise NotImplementedError('Kilobot subclass needs to implement _setup')
+
+    def _loop(self):
+        raise NotImplementedError('Kilobot subclass needs to implement _loop')
+
+
+class SimplePhototaxisKilobot(Kilobot):
+    def __init__(self, world, position=None, orientation=None, light=None):
+        super().__init__(world=world, position=position, orientation=orientation, light=light)
+
+        self.last_light = 0
+        self.turn_cw = 1
+        self.counter = 0
+
+        self.env = world
+
+    def _setup(self):
+        self.turn_left()
+
+    def _loop(self):
+        # we override step
+        pass
+
+    def light_sensor_pos(self):
+        return self.get_position()
+
+    def step(self, time_step):
+        movement_direction = self._light_gradient
+
+        n = np.sqrt(np.dot(movement_direction, movement_direction))
+        # n = np.linalg.norm(movement_direction)
+        if n > self._max_linear_velocity:
+            movement_direction = movement_direction / n * self._max_linear_velocity
+
+        movement_direction *= _world_scale
+
+        self._body.linearVelocity = b2Vec2(*movement_direction.astype(float))
+        # self._body.angle = np.arctan2(movement_direction[1], movement_direction[0])
+        self._body.linearDamping = .0
+
+    def draw(self, viewer):
+        # super(Kilobot, self).draw(viewer)
+        # viewer.draw_circle(position=self._body.position, radius=self._radius, color=(50,) * 3, filled=False)
+        viewer.draw_aacircle(position=self.get_position(), radius=self._radius + .002, color=self._body_color)
+        viewer.draw_aacircle(position=self.get_position(), radius=self._radius + .002, color=(100, 100, 100),
+                             filled=False, width=.005)
+
+
+class SimpleVelocityControlKilobot(Kilobot):
+    _density = 2.0
+
+    action_space = spaces.Box(np.array([.0, -Kilobot._max_angular_velocity]),
+                              np.array([Kilobot._max_linear_velocity, Kilobot._max_angular_velocity]),
+                              dtype=np.float64)
+    state_space = spaces.Box(np.array([-np.inf, -np.inf, -np.inf]),
+                             np.array([np.inf, np.inf, np.inf, ]), dtype=np.float64)
+
+    def __init__(self, world, *, velocity=None, **kwargs):
+        super().__init__(world=world, light=None, **kwargs)
+
+        if velocity:
+            self._velocity = velocity
+        else:
+            self._velocity = np.random.rand(2) * np.array([self._max_linear_velocity, 2 * self._max_angular_velocity])
+            self._velocity[1] -= self._max_angular_velocity
+
+    # def get_state(self):
+    #     pose = super(SimpleVelocityControlKilobot, self).get_state()
+    #     return pose + tuple(self._velocity)
+
+    def set_action(self, action):
+        if action is not None:
+            action = np.minimum(action, self.action_space.high)
+            action = np.maximum(action, self.action_space.low)
+            self._velocity = action
+        else:
+            self._velocity = np.array([.0, .0])
+
+    def get_action(self):
+        return self._velocity
+
+    def _setup(self):
+        pass
+
+    def _loop(self):
+        # we override step
+        pass
+
+    def step(self, time_step):
+        linear_velocity = np.array([np.cos(self.get_orientation()), np.sin(self.get_orientation())])
+        linear_velocity *= self._velocity[0] * _world_scale
+
+        self._body.linearVelocity = b2Vec2(*linear_velocity.astype(float))
+        self._body.angularVelocity = self._velocity[1]
+        # self._body.linearDamping = .0
+        # self._body.angularDamping = .0
+
+    def set_color(self, color):
+        self._body_color = color
+
+
+class SimpleAccelerationControlKilobot(SimpleVelocityControlKilobot):
+    _density = 2.0
+
+    action_space = spaces.Box(np.array([-.005, -.2 * np.pi]), np.array([.005, .2 * np.pi]), dtype=np.float64)
+    state_space = spaces.Box(np.array([-np.inf, -np.inf, -np.inf, .0, -Kilobot._max_angular_velocity]),
+                                        np.array([np.inf, np.inf, np.inf, Kilobot._max_linear_velocity,
+                                            Kilobot._max_angular_velocity]), dtype=np.float64)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self._acceleration = np.array([.0, .0])
+
+    def get_state(self):
+        pose = super(SimpleAccelerationControlKilobot, self).get_state()
+        return pose + tuple(self._velocity)
+
+    def set_action(self, action):
+        if action is not None:
+            action = np.minimum(action, self.action_space.high)
+            action = np.maximum(action, self.action_space.low)
+            self._acceleration = action
+        else:
+            self._acceleration = np.array([.0, .0])
+
+    def get_action(self):
+        return self._acceleration
+
+    def step(self, time_step):
+        self._velocity += self._acceleration * time_step
+
+        self._velocity = np.maximum(self._velocity, [.0, -self._max_angular_velocity])
+        self._velocity = np.minimum(self._velocity, [self._max_linear_velocity, self._max_angular_velocity])
+
+        super(SimpleAccelerationControlKilobot, self).step(time_step)
+
+
+class PhototaxisKilobot(Kilobot):
+    def __init__(self, world, position=None, orientation=None, light=None):
+        super(PhototaxisKilobot, self).__init__(world=world, position=position, orientation=orientation, light=light)
+
+        self.__light_measurement = 0
+        self.__threshold = -np.inf
+        self.__last_update = .0
+        self.__update_interval = 6
+        self.__update_counter = 0
+        self.__no_change_counter = 0
+        self.__no_change_threshold = 15
+
+    def _setup(self):
+        self.turn_left()
+
+    def _loop(self):
+
+        if self.__update_counter % self.__update_interval:
+            self.__update_counter += 1
+            return
+
+        self.__update_counter += 1
+
+        self.__light_measurement = self.get_ambientlight()
+
+        if self.__light_measurement > self.__threshold or self.__no_change_counter >= self.__no_change_threshold:
+            self.__threshold = self.__light_measurement + .01
+            self.switch_directions()
+            self.__no_change_counter = 0
+        else:
+            self.__no_change_counter += 1
+</file>
+
+<file path="gym_kilobots/lib/light.py">
+import numpy as np
+
+from typing import Iterable, Callable, Optional
+
+from gymnasium import spaces
+
+
+class Light(object):
+    relative_actions = True
+    interpolate_actions = True
+
+    def __init__(self, **kwargs):
+        self.observation_space = None
+        self.action_space = None
+        
+    def step(self, action, time_step: float):
+        raise NotImplementedError
+
+    def get_value(self, position: np.ndarray) -> np.ndarray:
+        raise NotImplementedError
+
+    def get_gradient(self, position: np.ndarray) -> np.ndarray:
+        raise NotImplementedError
+
+    def value_and_gradients(self, position: np.ndarray) -> (np.ndarray, np.ndarray):
+        return self.get_value(position), self.get_gradient(position)
+
+    def get_state(self):
+        raise NotImplementedError
+
+    def draw(self, viewer):
+        raise NotImplementedError
+
+
+class SinglePositionLight(Light):
+    def __init__(self, *, position: np.ndarray = None, bounds: (np.ndarray, np.ndarray) = None,
+                 action_bounds: (np.ndarray, np.ndarray) = None, relative_actions: bool = True, **kwargs):
+        super().__init__(**kwargs)
+        if position is None:
+            self._position = np.array((.0, .0))
+        else:
+            self._position = position
+
+        self._bounds = bounds
+        if self._bounds is None:
+            self._bounds = np.array([-np.inf, -np.inf]), np.array([np.inf, np.inf])
+
+        self._relative_actions = relative_actions
+        self._action_bounds = action_bounds
+        if self._action_bounds is None:
+            if self._relative_actions:
+                self._action_bounds = np.array([-0.01, -0.01]), np.array([.01, .01])
+            else:
+                self._action_bounds = self._bounds
+
+        self.action_space = spaces.Box(*self._action_bounds, dtype=np.float64)
+        self.observation_space = spaces.Box(*self._bounds, dtype=np.float64)
+
+    def step(self, action: np.ndarray, time_step: float):
+        if action is None:
+            return
+
+        action = action.squeeze()
+
+        if self._action_bounds is not None:
+            action = np.maximum(action, self._action_bounds[0])
+            action = np.minimum(action, self._action_bounds[1])
+
+        if self._relative_actions:
+            self._position += action * time_step
+        else:
+            self._position = action
+
+        self._position = np.maximum(self._position, self._bounds[0])
+        self._position = np.minimum(self._position, self._bounds[1])
+
+    def get_value(self, position: np.ndarray):
+        return -1 * np.linalg.norm(position - self._position, axis=1)
+
+    def get_gradient(self, position: np.ndarray):
+        gradient = -1 * (position - self._position)
+        return gradient / np.linalg.norm(gradient, axis=1)
+
+    def value_and_gradients(self, position: np.ndarray):
+        gradients = -1 * (position - self._position)
+        gradient_norms = np.linalg.norm(gradients, axis=1)
+        return -1 * gradient_norms, gradients / gradient_norms
+
+    def get_position(self):
+        return self._position
+
+    def get_state(self):
+        return self._position
+
+    def draw(self, viewer):
+        viewer.draw_aacircle(position=self._position, radius=.01, color=(255, 30, 30, 150))
+
+
+class CompositeLight(Light):
+    def __init__(self, lights: Iterable[Light] = None, reducer: Callable[[np.ndarray, Optional[int]], float] = np.sum):
+        """
+
+        :type lights: Iterable[Light] a list of Light objects
+        :type reducer: Callable[[np.ndarray, Optional[int]], float]
+        """
+        super().__init__()
+        self._lights = lights
+        self._reducer = reducer
+
+        self.observation_space = spaces.Box(np.concatenate(list(l.observation_space.low for l in self._lights)),
+                                            np.concatenate(list(l.observation_space.high for l in self._lights)),
+                                            dtype=np.float64)
+        self.action_space = spaces.Box(np.concatenate(list(l.action_space.low for l in self._lights)),
+                                       np.concatenate(list(l.action_space.high for l in self._lights)),
+                                       dtype=np.float64)
+        self._action_dims = list(l.action_space.shape[0] for l in self._lights)
+
+    @property
+    def lights(self):
+        return tuple(self._lights)
+
+    def step(self, action, time_step):
+        if action is not None:
+            action = action.squeeze()
+            for l, ad in zip(self._lights, self._action_dims):
+                l.step(action[:ad], time_step)
+                action = action[ad:]
+
+    def get_value(self, position: np.ndarray):
+        return np.sum(np.array([l.get_value(position) for l in self._lights]), axis=0)
+
+    def get_gradient(self, position: np.ndarray):
+        max_l = np.argmax([l.get_value(position) for l in self._lights], axis=0)
+        grads = np.array([l.get_gradient(position) for l in self._lights])
+        return grads[max_l, range(grads.shape[1])].squeeze()
+
+    def value_and_gradients(self, position: np.ndarray):
+        values, grads = map(np.asarray, zip(*[l.value_and_gradients(position) for l in self._lights]))
+        value = np.sum(values, axis=0)
+        max_l = np.argmax(values, axis=0)
+        return value, grads[max_l, range(position.shape[0])].squeeze()
+
+    def get_state(self):
+        return np.concatenate(list(l.get_state() for l in self._lights))
+
+    def draw(self, viewer):
+        for l in self._lights:
+            l.draw(viewer)
+
+
+class CircularGradientLight(SinglePositionLight):
+    def __init__(self, radius=.2, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._radius = radius
+
+    def get_value(self, position: np.ndarray):
+        distance = np.linalg.norm(position - self._position)
+
+        # compute value as linear interpolation between 255 and 0
+        value = np.ones(position.shape[0])
+        value -= distance / self._radius
+        value = np.maximum(np.minimum(value, 1.), .0)
+        value *= 255
+
+        return value
+
+    def get_gradient(self, position: np.ndarray):
+        gradient = -1 * (position - self._position)
+        norm_gradient = np.linalg.norm(gradient, axis=-1)
+
+        gradient[norm_gradient <= self._radius] /= norm_gradient[norm_gradient < self._radius, None]
+        gradient[norm_gradient > self._radius] *= .0
+
+        return gradient
+
+    def value_and_gradients(self, position: np.ndarray):
+        gradient = -1 * (position - self._position)
+        norm_gradient = np.linalg.norm(gradient, axis=1)
+
+        # compute value as linear interpolation between 255 and 0
+        value = np.ones(position.shape[0])
+        value -= norm_gradient / self._radius
+        value = np.maximum(np.minimum(value, 1.), .0)
+        value *= 255
+        # normalize gradients and set gradients to zero if norm larger than radius
+        gradient /= norm_gradient[:, None]
+        gradient[norm_gradient > self._radius] *= .0
+
+        return value, gradient
+
+    def get_state(self):
+        return self._position
+
+    def draw(self, viewer):
+        viewer.draw_transparent_circle(position=self._position, radius=self._radius, color=(255, 255, 30, 150))
+
+
+class SmoothGridLight(Light):
+    def __init__(self):
+        super(SmoothGridLight, self).__init__()
+
+    def step(self, action, time_step):
+        raise NotImplementedError
+
+    def get_value(self, position: np.ndarray):
+        raise NotImplementedError
+
+    def get_gradient(self, position: np.ndarray):
+        raise NotImplementedError
+
+    def get_state(self):
+        raise NotImplementedError
+
+    def draw(self, viewer):
+        raise NotImplementedError
+
+
+class GradientLight(Light):
+    relative_actions = False
+    interpolate_actions = False
+
+    def __init__(self, angle: float = .0):
+        super().__init__()
+
+        self._gradient_angle = np.array([angle])
+        self._gradient_vec = np.r_[np.cos(angle), np.sin(angle)]
+
+        self._bounds = np.array([-np.pi]), np.array([np.pi])
+        if self.relative_actions:
+            self._action_bounds = .5 * np.array([-np.pi]), .5 * np.array([np.pi])
+        else:
+            self._action_bounds = 2 * np.array([-np.pi]), 2 * np.array([np.pi])
+
+        self.observation_space = spaces.Box(*self._bounds, dtype=np.float64)
+        self.action_space = spaces.Box(*self._action_bounds, dtype=np.float64)
+
+    def step(self, action, time_step):
+        if action is None:
+            return
+
+        action = np.maximum(action, self._action_bounds[0])
+        action = np.minimum(action, self._action_bounds[1])
+        if self.relative_actions:
+            self._gradient_angle += action * time_step
+        else:
+            self._gradient_angle = action
+
+        if self._gradient_angle < self._bounds[0]:
+            self._gradient_angle += 2 * np.pi
+        if self._gradient_angle > self._bounds[1]:
+            self._gradient_angle -= 2 * np.pi
+
+        self._gradient_vec = np.r_[np.cos(self._gradient_angle), np.sin(self._gradient_angle)]
+
+    def get_value(self, position: np.ndarray):
+        projection = self._gradient_vec.dot(position)
+        return projection
+
+    def get_gradient(self, position: np.ndarray):
+        return self._gradient_vec
+
+    def get_state(self):
+        return self._gradient_angle
+
+    def set_angle(self, angle):
+        self._gradient_angle = np.array([angle])
+        self._gradient_vec = np.r_[np.cos(angle), np.sin(angle)]
+
+    def draw(self, viewer):
+        viewer.draw_polyline((np.array([0, 0]), self._gradient_vec), color=(1, 0, 0))
+        pass
+
+
+class MomentumLight(CircularGradientLight):
+    interpolate_actions = False
+
+    def __init__(self, velocity=None, max_velocity=None, action_bounds=None, **kwargs):
+        super().__init__(**kwargs)
+
+        self._action_bounds = action_bounds
+        if self._action_bounds is None:
+            self._action_bounds = np.array([-.01, -.01]), np.array([.01, .01])
+
+        if velocity is None:
+            self._velocity = np.array([.0, .0])
+        else:
+            self._velocity = velocity
+
+        if max_velocity is None:
+            self.max_velocity = np.inf
+        else:
+            self.max_velocity = max_velocity
+
+        self._obs_bounds = np.r_[self._bounds[0], [-max_velocity, -max_velocity]], \
+                           np.r_[self._bounds[1], [max_velocity, max_velocity]]
+
+        self.action_space = spaces.Box(*self._action_bounds, dtype=np.float64)
+        self.observation_space = spaces.Box(*self._obs_bounds, dtype=np.float64)
+
+    def step(self, action: np.ndarray, time_step: float):
+        if action is not None:
+            action = action.squeeze()
+
+            if self._action_bounds is not None:
+                action = np.maximum(action, self._action_bounds[0])
+                action = np.minimum(action, self._action_bounds[1])
+
+            self._velocity += action * time_step
+
+        if self.max_velocity is not None and np.linalg.norm(self._velocity) > self.max_velocity:
+            self._velocity *= self.max_velocity / np.linalg.norm(self._velocity)
+
+        self._position += self._velocity * time_step
+
+        self._position = np.maximum(self._position, self._bounds[0])
+        self._position = np.minimum(self._position, self._bounds[1])
+
+    def get_state(self):
+        return np.r_[self._position, self._velocity]
+</file>
+
+<file path="gym_kilobots/__init__.py">
+from gymnasium.envs.registration import register
+
+register(
+    id='Kilobots-QuadAssembly-v0',
+    entry_point='gym_kilobots.envs:QuadAssemblyKilobotsEnv',  # Ensure the entry point is correct
+)
+
+register(
+    id='Kilobots-Yaml-v0',
+    entry_point='gym_kilobots.envs:YamlKilobotsEnv',
+)
+
+register(
+    id='Kilobots-DirectControl-v0',
+    entry_point='gym_kilobots.envs:DirectControlKilobotsEnv',
+)
+</file>
+
+<file path="gym_kilobots/kb_plotting.py">
+import math
+import numpy as np
+from gym_kilobots.lib import Body, Quad, CornerQuad, Circle
+from gym_kilobots.lib.body import Polygon
+
+from matplotlib.axes import Axes
+
+
+def get_body_from_shape(object_shape, object_width, object_height, object_init):
+    from gym_kilobots.lib import Quad, Triangle, Circle, LForm, TForm, CForm
+    from Box2D import b2World
+
+    fake_world = b2World()
+
+    if object_shape.lower() in ['quad', 'rect', 'square']:
+        return Quad(width=object_width, height=object_height,
+                    position=object_init[:2], orientation=object_init[2],
+                    world=fake_world)
+    elif object_shape.lower() in ['corner_quad', 'corner-quad', 'corner_square', 'corner-square']:
+        return CornerQuad(width=object_width, height=object_height,
+                          position=object_init[:2], orientation=object_init[2],
+                          world=fake_world)
+    elif object_shape.lower() == 'triangle':
+        return Triangle(width=object_width, height=object_height,
+                        position=object_init[:2], orientation=object_init[2],
+                        world=fake_world)
+    elif object_shape.lower() == 'circle':
+        return Circle(radius=object_width, position=object_init[:2],
+                      orientation=object_init[2], world=fake_world)
+    elif object_shape.lower() == 'l_shape':
+        return LForm(width=object_width, height=object_height,
+                     position=object_init[:2], orientation=object_init[2],
+                     world=fake_world)
+    elif object_shape.lower() == 't_shape':
+        return TForm(width=object_width, height=object_height,
+                     position=object_init[:2], orientation=object_init[2],
+                     world=fake_world)
+    elif object_shape.lower() == 'c_shape':
+        return CForm(width=object_width, height=object_height,
+                     position=object_init[:2], orientation=object_init[2],
+                     world=fake_world)
+
+
+def plot_body_from_shape(axes: Axes, object_shape: str, object_width: float, object_height: float, object_init,
+                         **kwargs):
+    body = get_body_from_shape(object_shape, object_width, object_height, object_init)
+    return plot_body(axes, body, **kwargs), body
+
+
+def plot_body(axes: Axes, body: Body, **kwargs):
+    if isinstance(body, CornerQuad):
+        return plot_rect(axes, body, highlight_corner=True, **kwargs)
+    if isinstance(body, Quad):
+        return plot_rect(axes, body, **kwargs)
+    if isinstance(body, Circle):
+        return plot_circle(axes, body, **kwargs)
+    if isinstance(body, Polygon):
+        return plot_polygon(axes, body, **kwargs)
+
+
+def update_body(body, artist):
+    if isinstance(body, Quad):
+        update_rect(body, artist)
+    if isinstance(body, Circle):
+        update_circle(body, artist)
+    if isinstance(body, Polygon):
+        update_polygon(body, artist)
+
+
+def plot_rect(axes: Axes, rect, highlight_corner=False, **kwargs):
+    from matplotlib.patches import Rectangle, Polygon
+    defaults = dict(fill=True, edgecolor='#929591', facecolor='#d8dcd6', highlight_fill=True,
+                    highlight_facecolor='#d8dcd6')
+    for k in defaults:
+        if k not in kwargs:
+            kwargs[k] = defaults[k]
+
+    if 'alpha' in kwargs:
+        from matplotlib.colors import to_rgba
+        kwargs['edgecolor'] = to_rgba(kwargs['edgecolor'], kwargs['alpha'])
+        kwargs['facecolor'] = to_rgba(kwargs['facecolor'], kwargs['alpha'])
+        kwargs['highlight_facecolor'] = to_rgba(kwargs['highlight_facecolor'], kwargs['alpha'])
+
+    highlight_facecolor = kwargs.pop('highlight_facecolor')
+    highlight_fill = kwargs.pop('highlight_fill')
+
+    x, y, theta = rect.get_pose()
+    corner = rect.get_world_point((-rect.width / 2, -rect.height / 2))
+    p1 = axes.add_patch(Rectangle(xy=corner, angle=math.degrees(theta),
+                                  width=rect.width, height=rect.height, **kwargs))
+
+    if highlight_corner:
+        return p1, axes.add_patch(Polygon(xy=np.array(rect.vertices[0:3]), fill=highlight_fill,
+                                          facecolor=highlight_facecolor))
+    else:
+        return p1
+
+
+def update_rect(rect, artist):
+    if isinstance(artist, tuple):
+        update_rect(rect, artist[0])
+        artist[1].set_xy(np.array(rect.vertices[0:3]))
+    else:
+        x, y, theta = rect.get_pose()
+        corner = rect.get_world_point((-rect.width / 2, -rect.height / 2))
+        artist.set_xy(corner)
+        artist.angle = math.degrees(theta)
+
+
+def plot_circle(axes: Axes, circle, **kwargs):
+    from matplotlib.patches import Circle
+    defaults = dict(fill=True, edgecolor='#929591', facecolor='#d8dcd6')
+    for k in defaults:
+        if k not in kwargs:
+            kwargs[k] = defaults[k]
+
+    return axes.add_patch(Circle(xy=circle.get_position(), radius=circle.get_radius(), **kwargs))
+
+
+def update_circle(circle, artist):
+    artist.set_center(circle.get_position())
+    artist.set_radius(circle.get_radius())
+
+
+def plot_polygon(axes: Axes, polygon, **kwargs):
+    from matplotlib.patches import Polygon
+    defaults = dict(fill=True,
+                    # edgecolor='#929591',
+                    facecolor='#d8dcd6')
+    for k in defaults:
+        if k not in kwargs:
+            kwargs[k] = defaults[k]
+
+    if 'alpha' in kwargs:
+        from matplotlib.colors import to_rgba
+        # kwargs['edgecolor'] = to_rgba(kwargs['edgecolor'], kwargs['alpha'])
+        kwargs['facecolor'] = to_rgba(kwargs['facecolor'], kwargs['alpha'])
+
+    artist = axes.add_patch(Polygon(xy=np.array(polygon.plot_vertices), **kwargs))
+
+    return artist
+
+
+def update_polygon(polygon, artist):
+    artist.set_xy(np.array(polygon.plot_vertices))
+</file>
+
+<file path="gym_kilobots/kb_rendering.py">
+import numpy as np
+import pygame
+# from pygame import gfxdraw
+pygame.init()
+
+
+class KilobotsViewer(object):
+    def __init__(self, width, height, caption="", display=True, record_to=None):
+        self._width = width
+        self._height = height
+        self._display = display
+
+        if display:
+            flags = pygame.HWSURFACE | pygame.DOUBLEBUF
+            self._window = pygame.display.set_mode((width, height), flags)
+            pygame.display.set_caption(caption)
+            pygame.event.set_allowed(pygame.QUIT)
+
+            # pygame.mouse.set_visible(False)
+        else:
+            flags = pygame.HWSURFACE | pygame.DOUBLEBUF
+            self._window = pygame.Surface((width, height), flags)
+
+        if record_to:
+            import imageio
+            self._writer = imageio.get_writer(record_to, mode='I')
+        else:
+            self._writer = None
+
+        self._scale = np.array([[1., .0], [.0, -1.]])
+        self._translation = np.zeros(2)
+
+    def __del__(self):
+        self.close()
+
+    def set_bounds(self, left, right, bottom, top):
+        assert right > left and top > bottom
+        scale_x = self._width / (right - left)
+        scale_y = self._height / (top - bottom)
+        self._scale = np.array([[scale_x, .0], [.0, -scale_y]])
+        self._translation = np.array([-left * scale_x, -bottom * scale_y])
+
+    def _transform(self, position):
+        return np.round(self._scale.dot(position) + self._translation).astype(int)
+
+    def draw_aacircle(self, position=(0, 0), radius=.1, color=(0, 0, 0), filled=True, width=.01):
+        position = self._transform(position)
+        radius = int(self._scale[0, 0] * radius)
+        width = 0 if filled else int(self._scale[0, 0] * width)
+
+        pygame.draw.circle(self._window, color, position, radius, width)
+
+    def draw_circle(self, position=(0, 0), radius=.1, color=(0, 0, 0), filled=True, width=.01):
+        position = self._transform(position)
+        radius = int(self._scale[0, 0] * radius)
+        width = 0 if filled else int(self._scale[0, 0] * width)
+
+        pygame.draw.circle(self._window, color, position, radius, width)
+
+    def draw_polygon(self, vertices, color=(0, 0, 0), filled=True, width=.01):
+        vertices = [self._transform(v) for v in vertices]
+        width = 0 if filled else int(self._scale[0, 0] * width)
+        # gfxdraw.aapolygon(self._window, vertices, color)
+        # gfxdraw.filled_polygon(self._window, vertices, color)
+        pygame.draw.polygon(self._window, color, vertices, 0 if filled else width)
+
+    def draw_polyline(self, vertices, color=(0, 0, 0), closed=False, width=.01):
+        vertices = [self._transform(v) for v in vertices]
+        width = int(self._scale[0, 0] * width)
+        pygame.draw.lines(self._window, color, closed, vertices, width)
+
+    def draw_line(self, start, end, color=(0, 0, 0), width=.01):
+        start = self._transform(start)
+        end = self._transform(end)
+        width = int(self._scale[0, 0] * width)
+        pygame.draw.line(self._window, color, start, end, width)
+
+    def draw_transparent_circle(self, position=(0, 0), radius=.1, color=(0, 0, 0, 125), filled=True, width=.01):
+        radius = int(self._scale[0, 0] * radius)
+        s = pygame.Surface((2 * radius, 2 * radius), pygame.HWSURFACE | pygame.SRCALPHA)
+        width = 0 if filled else int(self._scale[0, 0] * width)
+        pygame.draw.circle(s, color, (radius, radius), radius, width)
+        self._window.blit(s, self._transform(position)-radius)
+
+    def get_array(self):
+        image_data = pygame.surfarray.array3d(self._window)
+        return image_data
+
+    def get_mouse_position(self):
+        mouse_pos = np.array(pygame.mouse.get_pos()) - self._translation
+        return np.linalg.inv(self._scale).dot(mouse_pos)
+
+    def render(self):
+        if self._display:
+            pygame.display.flip()
+            if self._writer:
+                self._writer.append_data(pygame.surfarray.pixels3d(self._window))
+        else:
+            image = pygame.surfarray.array3d(self._window)
+            if self._writer:
+                self._writer.append_data(image)
+
+
+    @staticmethod
+    def close_requested():
+        if pygame.display.get_init():
+            return pygame.event.peek(pygame.QUIT)
+        return False
+
+    def close(self):
+        pygame.display.quit()
+        if self._writer:
+            self._writer.close()
+</file>
+
+<file path="gym_kilobots/test.py">
+import os
+import gymnasium as gym
+import gym_kilobots
+import numpy as np
+
+# Suppress pygame AVX2 warning
+os.environ["PYGAME_DETECT_AVX2"] = "1"
+
+env = gym.make('Kilobots-QuadAssembly-v0', render_mode='human')
+obs, info = env.reset()
+
+for t in range(300):
+    env.render()
+    obs, reward, terminated, truncated, info = env.step(env.action_space.sample())
+    if terminated or truncated:
+        break
+
+env.close()  # Ensure the environment is properly closed
+</file>
+
+<file path="gym_kilobots/tools.py">
+import pandas as pd
+
+
+
+def get_dataframe_from_state(state):
+    num_kilobots = state['kilobots'].shape[0]
+    num_objects = state['objects'].shape[0]
+
+    kilobot_index, objects_index, light_index = get_multiindices(num_kilobots, num_objects)
+
+    pass
+</file>
+
+<file path="environment.yml">
+name: swarm
+channels:
+  - conda-forge
+dependencies:
+  - matplotlib
+  - scipy
+  - pygame
+  - box2d-py
+  - pytorch
+  - pandas
+  - pyyaml
+prefix: /home/roy/miniconda3/envs/swarm
+</file>
+
+<file path="setup.py">
+from setuptools import setup, find_packages
+
+setup(
+    name='gym_kilobots',
+    version='0.0.1',
+    install_requires=[
+        'gymnasium',  # Replace gym with gymnasium
+        'box2d-py',
+        'numpy',
+        'scipy',
+        'pygame',
+        'matplotlib'
+    ],
+    packages=find_packages()
+)
+</file>
+
+<file path=".gitmodules">
+[submodule "swarm_ws/src/ROS2swarm"]
+	path = swarm_ws/src/ROS2swarm
+	url = https://github.com/ROS2swarm/ROS2swarm
+[submodule "swarm_ws/src/driving_swarm_infrastructure"]
+	path = swarm_ws/src/driving_swarm_infrastructure
+	url = https://github.com/ovgu-FINken/driving_swarm_infrastructure
+[submodule "swarm_ws/src/turtlebot3"]
+	path = swarm_ws/src/turtlebot3
+	url = https://github.com/ROBOTIS-GIT/turtlebot3
+[submodule "swarm_ws/src/turtlebot3_msgs"]
+	path = swarm_ws/src/turtlebot3_msgs
+	url = https://github.com/ROBOTIS-GIT/turtlebot3_msgs
+[submodule "swarm_ws/src/turtlebot3_simulations"]
+	path = swarm_ws/src/turtlebot3_simulations
+	url = https://github.com/ROBOTIS-GIT/turtlebot3_simulations
+</file>
+
+<file path=".gitignore">
+# Ignore build, install, and log directories created by colcon
+/build/
+/install/
+/log/
+
+# Ignore colcon metadata file, if present
+/colcon.meta
+
+# Ignore Python bytecode files and cache directories
+*.py[cod]
+__pycache__/
+
+# Ignore Python egg-info directories
+*.egg-info/
+
+# Ignore temporary files
+*~
+*.swp
+
+# Ignore IDE and editor-specific directories and files
+.vscode/
+.idea/
+
+# Ignore OS-specific files
+.DS_Store
+Thumbs.db
+
+# Ignore egg-info directories
+*.egg-info/
+
+# Ignore VSCode workspace files
+*.code-workspace
+</file>
+
+<file path="README.md">
+# MARLins with gym_kilobot
+
+A custom suite of Gymnasium environment, `gym_kilobots` for simulating “kilobots,” a type of swarm robot, in a 2D world with Box2D. This package supports multiple variations of kilobot control (direct control, phototaxis, etc.) and includes environment configurations for tasks like “QuadAssembly” or “Yaml-based” environment definitions.
+
+This is an updated version of: https://github.com/gregorgebhardt/gym-kilobots
+
+NOTE: This was originally going to use ROS 2 and Gazebo, which isn't ideal for RL training, hence why we updated this old gym environment. The original ROS 2 workspace can be found in swarm_ws.
+
+## 1. Features
+
+- **Box2D-based** physics simulation with kilobot models.
+- **Multiple environment classes** for standard tasks:
+  - `QuadAssemblyKilobotsEnv`
+  - `YamlKilobotsEnv` (load environment setup from YAML)
+  - `DirectControlKilobotsEnv`  
+- **Rendering** with a custom PyGame-based viewer.
+- **Gymnasium**-compatible, so you can use standard RL libraries (PPO, SAC, etc.) with these environments.
+
+---
+
+## 2. Environment Setup
+
+We provide an `environment.yml` file to handle most dependencies via conda. Since Gymnasium 1.1.1 is not currently on conda, you’ll need to `pip install` it after creating the conda environment.
+
+### 2.1 Create and Activate the Conda Environment
+
+```bash
+# From the project root (where environment.yml is located)
+conda env create -f environment.yml -c conda-forge
+
+# Activate the newly created environment
+conda activate swarm
+```
+
+### 2.2 Install Gymnasium 1.1.1 via pip
+
+Inside your activated conda environment, run:
+
+```bash
+pip install gymnasium==1.1.1
+```
+
+This ensures the version matches what’s not yet available on conda. Verify:
+
+```bash
+python -c "import gymnasium; print(gymnasium.__version__)"
+# should output 1.1.0
+```
+
+---
+
+## 3. Installing **gym_kilobots** Gymnasium Environment
+
+From the source repo folder, run:
+
+```bash
+pip install -e .
+```
+
+The `-e` (editable) flag means any local code changes are reflected without re-installation.
+
+---
+
+## 4. Usage
+
+### 4.1 Import and Make an Environment
+
+```python
+import gymnasium as gym
+import gym_kilobots  # triggers environment registration
+
+env = gym.make("Kilobots-QuadAssembly-v0", render_mode="human")
+obs, info = env.reset()
+for _ in range(500):
+    action = env.action_space.sample() 
+    obs, reward, done, truncated, info = env.step(action)
+    if done or truncated:
+        break
+env.close()
+```
+
+- Use `render_mode=None` to run without GUI (no PyGame window).
+
+### 4.2 Example: Running the Built-In `test.py`
+
+There is a `test.py` script in `gym_kilobots` that demonstrates usage of one environment:
+
+```bash
+python gym_kilobots/test.py
+```
+
+This script will create the “QuadAssembly” environment, reset, and run for a few hundred steps. If everything is correct, a PyGame window appears with kilobots moving around (assuming `render_mode='human'` in the code).
+
+---
+
+## 5. Notes and Troubleshooting
+
+1. **Mixing Conda & Pip**  
+   - We install Gymnasium 1.1.0 via pip, and everything else via `environment.yml` in conda. This is generally safe as long as no version conflicts arise, but keep an eye out for warnings.
+
+## 6. TODOs
+For next week!
+
+- [] Make sure gradient navigation works for following light/Make sure collisions work as expected (Roy)
+
+- [] StableBaselines3 PPO for moving swarm cohesively to a destination (Anais, Osaro)
+
+  - [] Learning for pushing a block (translation) with the swarm (LATER)
+
+  - [] Learning for a rotating a block (rotation) with the swarm (LATER)
+
+- [] Report (Grace, Osaro)
+
+- [] Presentation (Grace, Osaro)
+</file>
+
+</files>
