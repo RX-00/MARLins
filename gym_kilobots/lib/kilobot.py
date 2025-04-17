@@ -311,7 +311,7 @@ class PhototaxisKilobot(Kilobot):
         self.__update_counter = 0
         self.__no_change_counter = 0
         self.__no_change_threshold = 15
-        
+
         # The "damping" factor scales the control signal derived from the light gradient.
         # When damping is closer to 1, the kilobot uses almost the full strength of the sensed gradient,
         # leading to more vigorous and rapid movements toward or away from the light.

@@ -22,14 +22,14 @@ if __name__ == "__main__":
     ]
 
     # Choose a fixed light position
-    light_pos = (0.5, 0.5)
+    light_pos = (-0.5, 0.5)
 
     # Choose four explicit kilobot positions
     kb_positions = [
-        (-0.50,  0.60),
-        ( 0.50,  0.60),
-        ( 0.60,  0.50),
-        ( 0.60, -0.50),
+        (-0.50, 0.60),
+        (-0.50, 0.60),
+        (-0.60, 0.50),
+        (-0.60, 0.50),
     ]
 
     # NOTE: if you don't do this, the environment will randomly place the objects
@@ -37,7 +37,7 @@ if __name__ == "__main__":
         'Kilobots-QuadAssembly-v0',
         render_mode='human',
         num_kilobots=len(kb_positions),
-        object_config=square_objects,
+        object_config=single_center_object,
         light_position=light_pos,
         kilobot_positions=kb_positions
     )
