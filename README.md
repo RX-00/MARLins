@@ -32,19 +32,20 @@ conda env create -f environment.yml -c conda-forge
 conda activate swarm
 ```
 
-### 2.2 Install Gymnasium 1.1.1 via pip
+### 2.2 Install Gymnasium 1.1.1 and stable_baselines3 via pip
 
 Inside your activated conda environment, run:
 
 ```bash
 pip install gymnasium==1.1.1
+pip install stable_baslines3
 ```
 
 This ensures the version matches what’s not yet available on conda. Verify:
 
 ```bash
 python -c "import gymnasium; print(gymnasium.__version__)"
-# should output 1.1.0
+# should output 1.1.1
 ```
 
 ---
