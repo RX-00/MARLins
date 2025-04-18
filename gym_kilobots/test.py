@@ -1,11 +1,12 @@
-import os
-os.environ["PYGAME_DETECT_AVX2"] = "1"
 import numpy as np
 import gymnasium as gym
 import gym_kilobots
 import pygame  # Initialize pygame for keyboard input
+import stable_baselines3 as sb3
+from stable_baselines3.common.env_checker import check_env
 
-if __name__ == "__main__":
+
+def manual_control_demo():
     pygame.init()  # Initialize pygame for keyboard input
 
     # Define four objects in a centered square
@@ -78,3 +79,55 @@ if __name__ == "__main__":
 
     env.close()  # Ensure the environment is properly closed
     pygame.quit()  # Quit pygame
+
+def auto_control_demo():
+    # Define 1 object in the center of the environment
+    single_center_object = [
+        ((0.0, 0.0), 0.0)        # center,
+    ]
+
+    # Choose a fixed light position
+    light_pos = (-0.5, 0.5)
+
+    # Choose four explicit kilobot positions
+    kb_positions = [
+        (-0.50, 0.60),
+        (-0.50, 0.60),
+        (-0.60, 0.50),
+        (-0.60, 0.50),
+    ]
+
+    # NOTE: if you don't do this, the environment will randomly place the objects
+    env = gym.make(
+        'Kilobots-QuadAssembly-v0',
+        render_mode='human',
+        num_kilobots=len(kb_positions),
+        object_config=single_center_object,
+        light_position=light_pos,
+        kilobot_positions=kb_positions
+    )
+    
+    # Check the environment
+    check_env(env, warn=True)
+
+    obs, info = env.reset()
+
+    running = True
+
+    while running:
+
+        env.render()
+        obs, reward, terminated, truncated, info = env.step(env.action_space.sample())
+
+        # Print the orientation of the objects using the unwrapped environment
+        print(env.unwrapped.get_objects_status())
+
+        # End episode
+        if terminated or truncated:
+            break
+
+    env.close()  # Ensure the environment is properly closed
+
+if __name__ == "__main__":
+    #manual_control_demo()
+    auto_control_demo()

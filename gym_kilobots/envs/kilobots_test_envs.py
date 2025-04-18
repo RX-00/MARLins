@@ -48,13 +48,22 @@ class QuadAssemblyKilobotsEnv(KilobotsEnv):
         print(self._num_objects)
 
         obs, _ = self.reset()   # sample the true reset() output
+
+        # Define the observation space
+        # The observation space includes:
+        # - Kilobot observations: positions (x, y) of each kilobot
+        # - Object observations: positions (x, y) and orientations of each object
+        # - Additional environment-specific information (if applicable)
+        # Refer to KiloBotsEnv for the exact structure of the observation space in get_observation()
         self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,
-            shape=obs.shape,
+            shape=obs.shape,  # Shape depends on the number of kilobots and objects
             dtype=obs.dtype,
         )
 
+        # Define the action space
+        # Example: 2D continuous control for light source movement
         self.action_space = spaces.Box(
             low=-1.0, high=1.0, shape=(2,), dtype=np.float32
         )  # Example action space for light control
