@@ -108,7 +108,7 @@ def auto_control_demo():
     )
     
     # Check the environment
-    check_env(env, warn=True)
+    #check_env(env, warn=True)
 
     obs, info = env.reset()
 

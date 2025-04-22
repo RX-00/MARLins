@@ -79,6 +79,9 @@ class KilobotsEnv(gym.Env):
 
         self._step_world()
 
+        self.max_steps = 500
+        self.n_steps = 0
+
     @property
     def _sim_steps(self):
         return self.__sim_steps
@@ -116,12 +119,13 @@ class KilobotsEnv(gym.Env):
 
     def get_observation(self):
         # Flatten the state dictionary into a single NumPy array
-        kilobots_state = np.array([k.get_state() for k in self._kilobots], dtype=np.float32).flatten()
+        #kilobots_state = np.array([k.get_state() for k in self._kilobots], dtype=np.float32).flatten()
         objects_state = np.array([o.get_state() for o in self._objects], dtype=np.float32).flatten()
-        light_state = np.array(self._light.get_state(), dtype=np.float32).flatten() if self._light else np.array([], dtype=np.float32)
+        #light_state = np.array(self._light.get_state(), dtype=np.float32).flatten() if self._light else np.array([], dtype=np.float32)
 
         # Concatenate all components into a single observation array
-        return np.concatenate([kilobots_state, objects_state, light_state]).astype(np.float32)
+        #return np.concatenate([kilobots_state, objects_state, light_state]).astype(np.float32)
+        return objects_state.astype(np.float32)
 
     @abc.abstractmethod
     def get_reward(self, state, action, new_state):
@@ -171,6 +175,9 @@ class KilobotsEnv(gym.Env):
 
         # Get observation
         observation = self.get_observation()
+
+        # Reset number of steps
+        self.n_steps = 0
 
         # Return observation and an empty info dictionary
         info = {}
@@ -224,9 +231,12 @@ class KilobotsEnv(gym.Env):
         # reward
         reward = self.get_reward(state, action, next_state)
 
+        # keep track of number of steps
+        self.n_steps +=1
+
         # done (split into terminated and truncated)
         terminated = bool(self.has_finished(next_state, action))  # Ensure Python bool
-        truncated = bool(False)  # Add logic for truncation if needed
+        truncated = bool(self.n_steps >= self.max_steps)  # Add logic for truncation if needed
 
         # info
         info = self.get_info(next_state, action)
