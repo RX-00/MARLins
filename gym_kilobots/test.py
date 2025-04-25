@@ -23,14 +23,14 @@ def manual_control_demo():
     ]
 
     # Choose a fixed light position
-    light_pos = (-0.5, 0.5)
+    light_pos = (-0.1, 0.1)
 
     # Choose four explicit kilobot positions
     kb_positions = [
-        (-0.50, 0.60),
-        (-0.50, 0.60),
-        (-0.60, 0.50),
-        (-0.60, 0.50),
+        (-0.10, 0.20),
+        (-0.10, 0.20),
+        (-0.20, 0.10),
+        (-0.20, 0.10),
     ]
 
     # NOTE: if you don't do this, the environment will randomly place the objects
@@ -87,14 +87,14 @@ def auto_control_demo():
     ]
 
     # Choose a fixed light position
-    light_pos = (-0.5, 0.5)
+    light_pos = (-0.1, 0.1)
 
     # Choose four explicit kilobot positions
     kb_positions = [
-        (-0.50, 0.60),
-        (-0.50, 0.60),
-        (-0.60, 0.50),
-        (-0.60, 0.50),
+        (-0.10, 0.20),
+        (-0.10, 0.20),
+        (-0.10, 0.20),
+        (-0.10, 0.20),
     ]
 
     # NOTE: if you don't do this, the environment will randomly place the objects
@@ -129,5 +129,5 @@ def auto_control_demo():
     env.close()  # Ensure the environment is properly closed
 
 if __name__ == "__main__":
-    #manual_control_demo()
-    auto_control_demo()
+    manual_control_demo()
+    #auto_control_demo()

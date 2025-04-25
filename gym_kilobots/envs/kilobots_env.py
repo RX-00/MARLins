@@ -79,7 +79,7 @@ class KilobotsEnv(gym.Env):
 
         self._step_world()
 
-        self.max_steps = 500
+        self.max_steps = 10000
         self.n_steps = 0
 
     @property
@@ -125,6 +125,7 @@ class KilobotsEnv(gym.Env):
 
         # Concatenate all components into a single observation array
         #return np.concatenate([kilobots_state, objects_state, light_state]).astype(np.float32)
+        #return np.concatenate([kilobots_state, objects_state]).astype(np.float32)
         return objects_state.astype(np.float32)
 
     @abc.abstractmethod
@@ -132,7 +133,16 @@ class KilobotsEnv(gym.Env):
         raise NotImplementedError
 
     def has_finished(self, state, action):
-        return False
+        if not(-4 <= state['light'][0] <=4):
+            terminate = True
+        if not(-4 <= state['light'][1] <=4):
+            terminate = True
+        if not(-2 <= state['objects'][0][0] <=2):
+            terminate = True
+        if not(-2 <= state['objects'][0][1] <=2):
+            terminate = True
+        
+        return terminate
 
     def get_info(self, state, action):
         # Ensure the method always returns a dictionary

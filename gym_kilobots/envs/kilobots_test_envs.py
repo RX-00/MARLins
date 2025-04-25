@@ -56,8 +56,8 @@ class QuadAssemblyKilobotsEnv(KilobotsEnv):
         # - Additional environment-specific information (if applicable)
         # Refer to KiloBotsEnv for the exact structure of the observation space in get_observation()
         self.observation_space = spaces.Box(
-            low=-100,
-            high=100,
+            low=-10,
+            high=10,
             shape=obs.shape,  # Shape depends on the number of kilobots and objects
             dtype=obs.dtype,
         )
@@ -66,7 +66,7 @@ class QuadAssemblyKilobotsEnv(KilobotsEnv):
         # Define the action space
         # Example: 2D continuous control for light source movement
         self.action_space = spaces.Box(
-            low=-2.0, high=2.0, shape=(2,), dtype=np.float32
+            low=-0.5, high=0.5, shape=(2,), dtype=np.float32
         )  # Example action space for light control
 
 
@@ -113,16 +113,25 @@ class QuadAssemblyKilobotsEnv(KilobotsEnv):
         return False
 
     def get_reward(self, state, action, new_state):
-        Q = np.diag([10,10,0.01])
+        Q = np.diag([1,1,0.01])
         R = np.eye(2)
 
-        goal = np.array([1.0, 1.0, 0.1])
+        goal = np.array([0, 0.25, 0])
 
         x = np.array(new_state['objects']).flatten()
         action = np.array(action)
 
         #reward for getting closer to the goal
-        reward = np.exp(-0.5 * (x - goal).T @ Q @ (x - goal) - 0.5*(action)@ R @(action))
+        reward = -0.5 * (x - goal).T @ Q @ (x - goal) - 0.5*(action).T @ R @(action)
+
+        if not(-4 <= new_state['light'][0] <=4):
+            reward -= 20
+        if not(-4 <= new_state['light'][1] <=4):
+            reward -= 20
+        if not(-2 <= x[0] <=2):
+            reward -= 20
+        if not(-2 <= x[1] <=2):
+            reward -= 20
 
         return reward
 
