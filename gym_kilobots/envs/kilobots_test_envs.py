@@ -113,16 +113,16 @@ class QuadAssemblyKilobotsEnv(KilobotsEnv):
         return False
 
     def get_reward(self, state, action, new_state):
-        Q = np.diag([1,1,0.01])
-        R = np.eye(2)
+        Q = np.diag([10,10])
+        R = np.eye(2)*2
 
-        goal = np.array([0, 0.25, 0])
+        goal = np.array([0.9, 0])
 
-        x = np.array(new_state['objects']).flatten()
+        x = np.array(new_state['light']).flatten()
         action = np.array(action)
 
         #reward for getting closer to the goal
-        reward = -0.5 * (x - goal).T @ Q @ (x - goal) - 0.5*(action).T @ R @(action)
+        reward = np.exp(-0.5 * (x - goal).T @ Q @ (x - goal) - 0.5*(action).T @ R @(action))
 
         if not(-4 <= new_state['light'][0] <=4):
             reward -= 20
