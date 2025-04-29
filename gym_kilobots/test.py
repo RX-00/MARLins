@@ -111,8 +111,10 @@ def auto_control_demo():
     #check_env(env, warn=True)
 
     obs, info = env.reset()
-    t = 0
-    while t < 500:
+
+    running = True
+
+    while running:
 
         env.render()
         obs, reward, terminated, truncated, info = env.step(env.action_space.sample())
@@ -123,11 +125,9 @@ def auto_control_demo():
         # End episode
         if terminated or truncated:
             break
-        
-        t += 1
 
     env.close()  # Ensure the environment is properly closed
 
 if __name__ == "__main__":
-    manual_control_demo()
-    #auto_control_demo()
+    #manual_control_demo()
+    auto_control_demo()

@@ -155,8 +155,8 @@ class KilobotsEnv(gym.Env):
             terminate = True
         
         # if kilobots are too far from the light source terminate the episode
-        if not self.kilobots_in_light(state):
-            terminate = True
+        #if not self.kilobots_in_light(state):
+        #    terminate = True
         
         return terminate
 

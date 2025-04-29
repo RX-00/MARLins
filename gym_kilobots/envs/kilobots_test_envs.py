@@ -113,14 +113,30 @@ class QuadAssemblyKilobotsEnv(KilobotsEnv):
         return False
 
     def get_reward(self, state, action, new_state):
-        Q = np.diag([0.1, 0.1, 0.1, #object state reward
-                     100,100] # light state reward
+        Q = np.diag([100, 100, #light pos reward
+                     10, 10, 10, 10, 10, 10, 10, 10, #kilobots pos reward
+                     0, 0, 0] # object pos and orientation reward
                      )
-        R = np.eye(2)*2
+        R = np.eye(2)*0.1
 
-        goal = np.array([0.1,0,0,0.9, 0])
+        # goal = np.array([0,0,0, #object goal
+        #                  1.0, 0 #light goal
+                         
+        #                  ])
 
-        x = np.concatenate([np.array(new_state[v]).flatten() for v in ['objects','light']]).astype(np.float32)
+        # Extract states
+        light_pos = np.array(new_state['light']).flatten().astype(np.float32)
+        kilobots_pos = np.array(new_state['kilobots'])[:,:2].flatten().astype(np.float32)
+        object_pos = np.array(new_state['objects']).flatten().astype(np.float32)
+
+        #Define goal
+        light_goal = np.array([1.0, 0])
+        kilobots_goal = np.tile(light_goal,4)
+        object_goal = object_pos.copy()
+
+        goal = np.concatenate([light_goal, kilobots_goal, object_goal])
+        x = np.concatenate([light_pos, kilobots_pos, object_pos])
+        #x = np.concatenate([np.array(new_state[v]).flatten() for v in ['objects','light']]).astype(np.float32)
 
         action = np.array(action)
 
@@ -131,14 +147,10 @@ class QuadAssemblyKilobotsEnv(KilobotsEnv):
             reward -= 20
         if not(-4 <= new_state['light'][1] <=4):
             reward -= 20
-        if not(-2 <= x[0] <=2):
-            reward -= 20
-        if not(-2 <= x[1] <=2):
-            reward -= 20
 
         # if kilobots are too far from the light source terminate the episode
-        if not self.kilobots_in_light(new_state):
-            reward -= 0.5
+        #if not self.kilobots_in_light(new_state):
+        #     reward -= 1
 
         return reward
 
