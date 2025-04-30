@@ -79,11 +79,11 @@ class RenderCallback(BaseCallback):
 
 
 # Train the agent
-model = PPO("MlpPolicy", env, verbose=1)
-model.learn(total_timesteps=1_000_000,
-            callback=RenderCallback(env, render_freq=10_000))
+#model = PPO("MlpPolicy", env, verbose=1)
+#model.learn(total_timesteps=1_000_000,
+#            callback=RenderCallback(env, render_freq=10_000))
 #model.learn(total_timesteps=1_000_000)
-model.save("swarm_ppo")
+#model.save("swarm_ppo")
 
 # Test the policy
 model = PPO.load("swarm_ppo")
