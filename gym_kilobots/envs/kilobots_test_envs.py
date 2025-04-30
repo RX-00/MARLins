@@ -66,7 +66,7 @@ class QuadAssemblyKilobotsEnv(KilobotsEnv):
         # Define the action space
         # Example: 2D continuous control for light source movement
         self.action_space = spaces.Box(
-            low=-2.0, high=2.0, shape=(2,), dtype=np.float32
+            low=-1.0, high=1.0, shape=(2,), dtype=np.float32
         )  # Example action space for light control
 
 
@@ -110,28 +110,55 @@ class QuadAssemblyKilobotsEnv(KilobotsEnv):
                 self._kilobots.append(PhototaxisKilobot(self.world, position=pos, light=self._light))
 
     def has_finished(self, state, action):
+        # Parse the observation to get kilobots, object, and light information
+        #kilobots_info, _, light_info = self.parse_observation(state)
+
+        kilobots_info = state['kilobots']
+        light_info = state['light']
+
+        # Terminate if any kilobot leaves the radius of the light
+        light_radius = 0.3  # Define the radius of the light
+        kilobot_positions = kilobots_info[:, :2]  # Get x, y positions of kilobots
+        distances_to_light = np.linalg.norm(kilobot_positions - light_info, axis=1)
+        
+        # Check if any kilobot is outside the light radius
+        if np.any(distances_to_light > light_radius):
+            #print("Termination: A kilobot left the radius of the light.")
+            return True
+
+        # Terminate if the light's position exits the size of the displayed environment
+        environment_bounds = np.array([[-1.0, -0.5], [1.0, 0.5]])  # Define environment bounds as [[x_min, y_min], [x_max, y_max]]
+        if not (environment_bounds[0, 0] <= light_info[0] <= environment_bounds[1, 0] and
+                environment_bounds[0, 1] <= light_info[1] <= environment_bounds[1, 1]):
+            #print("Termination: The light exited the environment bounds.")
+            return True
+
         return False
 
     def get_reward(self, state, action):
-        Q = np.diag([10,10,0])
+        Q = np.diag([5, 5, 0])
         R = np.eye(2)
 
-        goal = np.array([-0.1, 0.1, 0.0])
+        goal = np.array([0.0, 0.0, 0.0])
 
-        kilobots_info, object_info, light_info = self.parse_observation(state)
-        
-        action = np.array(action)
+        # Extract kilobots, object, and light information from the state
+        kilobots_info = state["kilobots"]
+        object_info = state["objects"].squeeze()
+        light_info = state["light"]
+        light_info = np.array(light_info).flatten()
 
-        # Reward for getting closer to the goal
-        reward = np.exp(-0.5 * (object_info - goal).T @ Q @ (object_info - goal))
-        
+        # Reward for getting the object closer to the goal
+        reward = 0
+        reward += np.exp(-0.5 * (object_info - goal).T @ Q @ (object_info - goal))
+
         # Penalize for losing the kilobots from the light
-        # Calculate the Euclidean distance from each kilobot to the light
-        kilobot_positions = kilobots_info[:, :2]  # Get x,y positions of kilobots
+        kilobot_positions = kilobots_info[:, :2]  # Get x, y positions of kilobots
         distances_to_light = np.linalg.norm(kilobot_positions - light_info, axis=1)  # Calculate distances
-        
-        # Sum the distances and apply a scaling factor to penalize
-        reward -= np.sum(distances_to_light)
+        #reward -= 100 * np.sum(distances_to_light)
+
+        # Penalize more the further the light is from the object's position
+        light_to_object_distance = np.linalg.norm(light_info - object_info[:2])  # Distance between light and object
+        reward -= 1.0 * (light_to_object_distance ** 2)  # Quadratic penalty for distance
 
         return reward
 

@@ -79,7 +79,7 @@ class KilobotsEnv(gym.Env):
 
         self._step_world()
 
-        self.max_steps = 500
+        self.max_steps = 5000
         self.n_steps = 0
 
     @property

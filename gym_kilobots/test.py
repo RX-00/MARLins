@@ -19,7 +19,7 @@ def manual_control_demo():
 
     # Define 1 object in the center of the environment
     single_center_object = [
-        ((-0.4, 0.4), 0.0)        # center,
+        ((-0.3, 0.3), 0.0)        # center,
     ]
 
     # Choose a fixed light position
@@ -27,9 +27,9 @@ def manual_control_demo():
 
     # Choose four explicit kilobot positions
     kb_positions = [
-        (-0.50, 0.60),
-        (-0.50, 0.60),
-        (-0.60, 0.50),
+        (-0.55, 0.55),
+        (-0.50, 0.50),
+        (-0.60, 0.60),
         (-0.60, 0.50),
     ]
 
@@ -48,7 +48,8 @@ def manual_control_demo():
 
     running = True
     step = 0
-    while (step < 2000):
+    total_reward = 0
+    while running:
         # Process pygame events
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -60,24 +61,19 @@ def manual_control_demo():
         keys = pygame.key.get_pressed()
         action = [0.0, 0.0]
         if keys[pygame.K_UP]:
-            action[1] = 1.0
+            action[1] = 1.0/2
         if keys[pygame.K_DOWN]:
-            action[1] = -1.0
+            action[1] = -1.0/2
         if keys[pygame.K_LEFT]:
-            action[0] = -1.0
+            action[0] = -1.0/2
         if keys[pygame.K_RIGHT]:
-            action[0] = 1.0
+            action[0] = 1.0/2
 
         env.render()
         obs, reward, terminated, truncated, info = env.step(np.array(action, dtype=np.float32))
 
         # Print the orientation of the objects using the unwrapped environment
         print(env.unwrapped.get_objects_status())
-
-        Q = np.diag([10,10,0.01])
-        R = np.eye(2)
-
-        goal = np.array([0.0, 0.0, 0.0])
 
         x = env.unwrapped.get_observation()
         print(x)
@@ -87,20 +83,19 @@ def manual_control_demo():
         
         # Print the parsed information
         print("\n--- Parsed Observation ---")
-        print("Kilobots (position_x, position_y, orientation):")
-        for i, kb in enumerate(kilobots_info):
-            print(f"  Kilobot {i}: ({kb[0]:.4f}, {kb[1]:.4f}, {kb[2]:.4f})")
+        #print("Kilobots (position_x, position_y, orientation):")
+        #for i, kb in enumerate(kilobots_info):
+        #    print(f"  Kilobot {i}: ({kb[0]:.4f}, {kb[1]:.4f}, {kb[2]:.4f})")
         
         print("\nObject (position_x, position_y, orientation):")
         print(f"  ({object_info[0]:.4f}, {object_info[1]:.4f}, {object_info[2]:.4f})")
         
-        print("\nLight (position_x, position_y):")
-        print(f"  ({light_info[0]:.4f}, {light_info[1]:.4f})")
+        #print("\nLight (position_x, position_y):")
+        #print(f"  ({light_info[0]:.4f}, {light_info[1]:.4f})")
         print("-------------------------\n")
 
-        reward = env.unwrapped.get_reward(x, action)
-
-        print(f"Reward: {reward}")
+        total_reward += reward
+        print(f"Reward: {total_reward}")
 
         step += 1
 

@@ -200,6 +200,9 @@ class CircularGradientLight(SinglePositionLight):
     def draw(self, viewer):
         viewer.draw_transparent_circle(position=self._position, radius=self._radius, color=(255, 255, 30, 150))
 
+    def get_radius(self):
+        return self._radius
+
 
 class SmoothGridLight(Light):
     def __init__(self):
