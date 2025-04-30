@@ -49,7 +49,7 @@ class SinglePositionLight(Light):
         self._action_bounds = action_bounds
         if self._action_bounds is None:
             if self._relative_actions:
-                self._action_bounds = np.array([-0.5, -0.5]), np.array([0.5, 0.5])
+                self._action_bounds = np.array([-0.01, -0.01]), np.array([.01, .01])
             else:
                 self._action_bounds = self._bounds
 
@@ -149,7 +149,7 @@ class CompositeLight(Light):
 
 
 class CircularGradientLight(SinglePositionLight):
-    def __init__(self, radius=.25, exponent=4, *args, **kwargs):
+    def __init__(self, radius=.3, exponent=5, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._radius = radius
         self._exponent = exponent

@@ -79,7 +79,7 @@ class KilobotsEnv(gym.Env):
 
         self._step_world()
 
-        self.max_steps = 10000
+        self.max_steps = 500
         self.n_steps = 0
 
     @property
@@ -119,30 +119,20 @@ class KilobotsEnv(gym.Env):
 
     def get_observation(self):
         # Flatten the state dictionary into a single NumPy array
-        #kilobots_state = np.array([k.get_state() for k in self._kilobots], dtype=np.float32).flatten()
+        kilobots_state = np.array([k.get_state() for k in self._kilobots], dtype=np.float32).flatten()
         objects_state = np.array([o.get_state() for o in self._objects], dtype=np.float32).flatten()
-        #light_state = np.array(self._light.get_state(), dtype=np.float32).flatten() if self._light else np.array([], dtype=np.float32)
+        light_state = np.array(self._light.get_state(), dtype=np.float32).flatten() if self._light else np.array([], dtype=np.float32)
 
         # Concatenate all components into a single observation array
-        #return np.concatenate([kilobots_state, objects_state, light_state]).astype(np.float32)
-        #return np.concatenate([kilobots_state, objects_state]).astype(np.float32)
-        return objects_state.astype(np.float32)
+        return np.concatenate([kilobots_state, objects_state, light_state]).astype(np.float32)
+        #return objects_state.astype(np.float32)
 
     @abc.abstractmethod
-    def get_reward(self, state, action, new_state):
+    def get_reward(self, state, action):
         raise NotImplementedError
 
     def has_finished(self, state, action):
-        if not(-4 <= state['light'][0] <=4):
-            terminate = True
-        if not(-4 <= state['light'][1] <=4):
-            terminate = True
-        if not(-2 <= state['objects'][0][0] <=2):
-            terminate = True
-        if not(-2 <= state['objects'][0][1] <=2):
-            terminate = True
-        
-        return terminate
+        return False
 
     def get_info(self, state, action):
         # Ensure the method always returns a dictionary
@@ -239,7 +229,7 @@ class KilobotsEnv(gym.Env):
         observation = self.get_observation()
 
         # reward
-        reward = self.get_reward(state, action, next_state)
+        reward = self.get_reward(state, action)
 
         # keep track of number of steps
         self.n_steps +=1

@@ -56,8 +56,8 @@ class QuadAssemblyKilobotsEnv(KilobotsEnv):
         # - Additional environment-specific information (if applicable)
         # Refer to KiloBotsEnv for the exact structure of the observation space in get_observation()
         self.observation_space = spaces.Box(
-            low=-10,
-            high=10,
+            low=-100,
+            high=100,
             shape=obs.shape,  # Shape depends on the number of kilobots and objects
             dtype=obs.dtype,
         )
@@ -66,7 +66,7 @@ class QuadAssemblyKilobotsEnv(KilobotsEnv):
         # Define the action space
         # Example: 2D continuous control for light source movement
         self.action_space = spaces.Box(
-            low=-0.5, high=0.5, shape=(2,), dtype=np.float32
+            low=-2.0, high=2.0, shape=(2,), dtype=np.float32
         )  # Example action space for light control
 
 
@@ -112,26 +112,26 @@ class QuadAssemblyKilobotsEnv(KilobotsEnv):
     def has_finished(self, state, action):
         return False
 
-    def get_reward(self, state, action, new_state):
-        Q = np.diag([1,1,0.01])
+    def get_reward(self, state, action):
+        Q = np.diag([10,10,0])
         R = np.eye(2)
 
-        goal = np.array([0, 0.25, 0])
+        goal = np.array([-0.1, 0.1, 0.0])
 
-        x = np.array(new_state['objects']).flatten()
+        kilobots_info, object_info, light_info = self.parse_observation(state)
+        
         action = np.array(action)
 
-        #reward for getting closer to the goal
-        reward = -0.5 * (x - goal).T @ Q @ (x - goal) - 0.5*(action).T @ R @(action)
-
-        if not(-4 <= new_state['light'][0] <=4):
-            reward -= 20
-        if not(-4 <= new_state['light'][1] <=4):
-            reward -= 20
-        if not(-2 <= x[0] <=2):
-            reward -= 20
-        if not(-2 <= x[1] <=2):
-            reward -= 20
+        # Reward for getting closer to the goal
+        reward = np.exp(-0.5 * (object_info - goal).T @ Q @ (object_info - goal))
+        
+        # Penalize for losing the kilobots from the light
+        # Calculate the Euclidean distance from each kilobot to the light
+        kilobot_positions = kilobots_info[:, :2]  # Get x,y positions of kilobots
+        distances_to_light = np.linalg.norm(kilobot_positions - light_info, axis=1)  # Calculate distances
+        
+        # Sum the distances and apply a scaling factor to penalize
+        reward -= np.sum(distances_to_light)
 
         return reward
 
@@ -146,6 +146,45 @@ class QuadAssemblyKilobotsEnv(KilobotsEnv):
             objects_info.append(f"object {i}: position: {obj.get_position()}, orientation: {obj.get_orientation()}")
 
         return objects_info
+    
+    # Function to parse observation array
+    def parse_observation(self, obs_array):
+        # Each kilobot has x, y, orientation (3 values)
+        kilobot_dim = 3
+        # Object has x, y, orientation (3 values)
+        object_dim = 3
+        # Light has x, y (2 values)
+        light_dim = 2
+
+        # Check if the observation is a scalar or a 1-element array
+        obs_array = np.array(obs_array).flatten()
+        if obs_array.size <= 1:
+            # Return default empty values when observation is a scalar or too small
+            empty_kilobots = np.zeros((self._num_kilobots, kilobot_dim))
+            empty_object = np.zeros(object_dim)
+            empty_light = np.zeros(light_dim)
+            return empty_kilobots, empty_object, empty_light
+        
+        # Make sure the array has the expected minimum size
+        expected_size = self._num_kilobots * kilobot_dim + object_dim + light_dim
+        if obs_array.size < expected_size:
+            # Pad with zeros if the array is smaller than expected
+            padded_array = np.zeros(expected_size)
+            padded_array[:obs_array.size] = obs_array
+            obs_array = padded_array
+        
+        # Calculate array indices
+        kilobots_end = self._num_kilobots * kilobot_dim
+        object_end = kilobots_end + object_dim
+        
+        # Extract data with safety checks
+        kilobots = obs_array[:kilobots_end].reshape(self._num_kilobots, kilobot_dim)
+        object_data = obs_array[kilobots_end:object_end]
+        light_data = obs_array[object_end:object_end+light_dim]  # Limit to expected light dimensions
+        
+        return kilobots, object_data, light_data
+
+
 
 class TriangleTestEnv(KilobotsEnv):
     def _configure_environment(self):

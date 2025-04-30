@@ -19,18 +19,18 @@ def manual_control_demo():
 
     # Define 1 object in the center of the environment
     single_center_object = [
-        ((0.0, 0.0), 0.0)        # center,
+        ((-0.4, 0.4), 0.0)        # center,
     ]
 
     # Choose a fixed light position
-    light_pos = (-0.1, 0.1)
+    light_pos = (-0.5, 0.5)
 
     # Choose four explicit kilobot positions
     kb_positions = [
-        (-0.10, 0.20),
-        (-0.10, 0.20),
-        (-0.20, 0.10),
-        (-0.20, 0.10),
+        (-0.50, 0.60),
+        (-0.50, 0.60),
+        (-0.60, 0.50),
+        (-0.60, 0.50),
     ]
 
     # NOTE: if you don't do this, the environment will randomly place the objects
@@ -47,7 +47,8 @@ def manual_control_demo():
     obs, info = env.reset()
 
     running = True
-    while running:
+    step = 0
+    while (step < 2000):
         # Process pygame events
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -73,6 +74,36 @@ def manual_control_demo():
         # Print the orientation of the objects using the unwrapped environment
         print(env.unwrapped.get_objects_status())
 
+        Q = np.diag([10,10,0.01])
+        R = np.eye(2)
+
+        goal = np.array([0.0, 0.0, 0.0])
+
+        x = env.unwrapped.get_observation()
+        print(x)
+        
+        # Parse the observation
+        kilobots_info, object_info, light_info = env.unwrapped.parse_observation(x)
+        
+        # Print the parsed information
+        print("\n--- Parsed Observation ---")
+        print("Kilobots (position_x, position_y, orientation):")
+        for i, kb in enumerate(kilobots_info):
+            print(f"  Kilobot {i}: ({kb[0]:.4f}, {kb[1]:.4f}, {kb[2]:.4f})")
+        
+        print("\nObject (position_x, position_y, orientation):")
+        print(f"  ({object_info[0]:.4f}, {object_info[1]:.4f}, {object_info[2]:.4f})")
+        
+        print("\nLight (position_x, position_y):")
+        print(f"  ({light_info[0]:.4f}, {light_info[1]:.4f})")
+        print("-------------------------\n")
+
+        reward = env.unwrapped.get_reward(x, action)
+
+        print(f"Reward: {reward}")
+
+        step += 1
+
         # End episode
         if terminated or truncated:
             break
@@ -83,7 +114,7 @@ def manual_control_demo():
 def auto_control_demo():
     # Define 1 object in the center of the environment
     single_center_object = [
-        ((0.0, 0.0), 0.0)        # center,
+        ((-0.2, 0.2), 0.0)        # center is (-0,0)
     ]
 
     # Choose a fixed light position
@@ -91,10 +122,10 @@ def auto_control_demo():
 
     # Choose four explicit kilobot positions
     kb_positions = [
-        (-0.10, 0.20),
-        (-0.10, 0.20),
-        (-0.10, 0.20),
-        (-0.10, 0.20),
+        (-0.50, 0.60),
+        (-0.50, 0.60),
+        (-0.60, 0.50),
+        (-0.60, 0.50),
     ]
 
     # NOTE: if you don't do this, the environment will randomly place the objects
