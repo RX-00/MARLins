@@ -19,18 +19,18 @@ def manual_control_demo():
 
     # Define 1 object in the center of the environment
     single_center_object = [
-        ((-0.3, 0.3), 0.0)        # center,
+        ((-0.4, 0.4), 0.0)        # top left,
     ]
 
     # Choose a fixed light position
-    light_pos = (-0.5, 0.5)
+    light_pos = (-0.4, 0.4)
 
     # Choose four explicit kilobot positions
     kb_positions = [
-        (-0.55, 0.55),
-        (-0.50, 0.50),
-        (-0.60, 0.60),
-        (-0.60, 0.50),
+        (-0.45, 0.45),
+        (-0.40, 0.40),
+        (-0.40, 0.45),
+        (-0.45, 0.40),
     ]
 
     # NOTE: if you don't do this, the environment will randomly place the objects

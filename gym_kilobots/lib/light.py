@@ -149,7 +149,7 @@ class CompositeLight(Light):
 
 
 class CircularGradientLight(SinglePositionLight):
-    def __init__(self, radius=.3, exponent=5, *args, **kwargs):
+    def __init__(self, radius=.5, exponent=6, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._radius = radius
         self._exponent = exponent

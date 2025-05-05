@@ -64,20 +64,20 @@ class Kilobot(Circle):
         self._motor_left = left
         self._motor_right = right
 
-    def switch_directions(self):
+    def switch_directions(self, motor_pwr=255):
         if self.__turn_direction == 'left':
-            self.turn_right()
+            self.turn_right(motor_pwr)
         else:
-            self.turn_left()
+            self.turn_left(motor_pwr)
 
-    def turn_right(self):
+    def turn_right(self, motor_pwr=255):
         self.__turn_direction = 'right'
-        self.set_motors(0, 255)
+        self.set_motors(0, motor_pwr)
         self.set_color((255, 0, 0))
 
-    def turn_left(self):
+    def turn_left(self, motor_pwr=255):
         self.__turn_direction = 'left'
-        self.set_motors(255, 0)
+        self.set_motors(motor_pwr, 0)
         self.set_color((0, 255, 0))
 
     def set_color(self, color):
@@ -310,7 +310,7 @@ class PhototaxisKilobot(Kilobot):
         self.__update_interval = 2
         self.__update_counter = 0
         self.__no_change_counter = 0
-        self.__no_change_threshold = 15
+        self.__no_change_threshold = 40
 
         # The "damping" factor scales the control signal derived from the light gradient.
         # When damping is closer to 1, the kilobot uses almost the full strength of the sensed gradient,
@@ -454,7 +454,7 @@ class PhototaxisKilobot(Kilobot):
 
             # Switch the direction of movement (left or right)
             # This creates the zigzagging behavior for exploring and climbing light gradients
-            self.switch_directions()
+            self.switch_directions(motor_pwr=250)
 
             # Reset the no-change counter since we're trying a new direction
             self.__no_change_counter = 0

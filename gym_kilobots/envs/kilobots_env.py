@@ -74,12 +74,12 @@ class KilobotsEnv(gym.Env):
             low=-np.inf, high=np.inf, shape=(1,), dtype=np.float32
         )  # Placeholder, should be overridden by subclasses
         self.action_space = spaces.Box(
-            low=-1.0, high=1.0, shape=(1,), dtype=np.float32
+            low=-0.5, high=0.5, shape=(1,), dtype=np.float32
         )  # Placeholder, should be overridden by subclasses
 
         self._step_world()
 
-        self.max_steps = 5000
+        self.max_steps = 1000
         self.n_steps = 0
 
     @property

@@ -1,5 +1,6 @@
 import gymnasium as gym
 import numpy as np
+import torch
 from gymnasium import spaces
 from stable_baselines3.common.env_checker import check_env
 
@@ -18,18 +19,18 @@ square_objects = [
 
 # Define 1 object in the center of the environment
 single_center_object = [
-    ((-0.3, 0.3), 0.0)        # top left,
+    ((-0.35, 0.35), 0.0)        # top left,
 ]
 
 # Choose a fixed light position
-light_pos = (-0.5, 0.5)
+light_pos = (-0.4, 0.4)
 
 # Choose four explicit kilobot positions
 kb_positions = [
-    (-0.55, 0.55),
-    (-0.50, 0.50),
-    (-0.60, 0.60),
-    (-0.60, 0.50),
+    (-0.45, 0.45),
+    (-0.40, 0.40),
+    (-0.40, 0.45),
+    (-0.45, 0.40),
 ]
 
 # NOTE: if you don't do this, the environment will randomly place the objects
@@ -78,12 +79,31 @@ class RenderCallback(BaseCallback):
         return True
 
 
+# Custom actor (pi) and value function (vf) networks
+# of two layers of size 32 each with Relu activation function
+# Note: an extra linear layer will be added on top of the pi and the vf nets, respectively
+policy_kwargs = dict(activation_fn=torch.nn.ReLU,
+                     net_arch=dict(pi=[256, 256], vf=[256, 256]))
+
 # Train the agent
+#model = PPO("MlpPolicy", env, policy_kwargs=policy_kwargs, verbose=1)
 #model = PPO("MlpPolicy", env, verbose=1)
-#model.learn(total_timesteps=1_000_000,
-#            callback=RenderCallback(env, render_freq=10_000))
+model = PPO("MlpPolicy",
+            env,
+            learning_rate=1e-4, # step size optimizer
+            n_steps=500, # rollout length
+            batch_size=100, # minibatch size of collected experiences
+            n_epochs=20, # number of passes over training data each update
+            gamma=0.99, # discount factor of future rewards
+            gae_lambda=0.95, # lambda param in Generalized Advantage Estimation (helps reduce variance in the advantage estimation)
+            clip_range=0.2, # clipping size for PPO policy updates
+            ent_coef=0.05, # coeff for entropy bonus (pos encourages exploration)
+            verbose=1, # detail level of msgs on training process printed
+            )
+model.learn(total_timesteps=100_000,
+            callback=RenderCallback(env, render_freq=10_000))
 #model.learn(total_timesteps=1_000_000)
-#model.save("swarm_ppo")
+model.save("swarm_ppo")
 
 # Test the policy
 model = PPO.load("swarm_ppo")

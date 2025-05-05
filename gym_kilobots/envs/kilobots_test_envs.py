@@ -110,10 +110,6 @@ class QuadAssemblyKilobotsEnv(KilobotsEnv):
                 self._kilobots.append(PhototaxisKilobot(self.world, position=pos, light=self._light))
 
     def has_finished(self, state, action):
-
-        # ONLY HERE FOR TESTING PURPOSES
-        return False
-
         # Parse the observation to get kilobots, object, and light information
         #kilobots_info, _, light_info = self.parse_observation(state)
 
@@ -140,29 +136,33 @@ class QuadAssemblyKilobotsEnv(KilobotsEnv):
         return False
 
     def get_reward(self, state, action):
-        Q = np.diag([5, 5, 0])
-        R = np.eye(2)
-
-        goal = np.array([0.0, 0.0, 0.0])
-
-        # Extract kilobots, object, and light information from the state
         kilobots_info = state["kilobots"]
         object_info = state["objects"].squeeze()
         light_info = state["light"]
-        light_info = np.array(light_info).flatten()
 
-        # Reward for getting the object closer to the goal
-        reward = 0
-        reward += np.exp(-0.5 * (object_info - goal).T @ Q @ (object_info - goal))
+        goal = np.array([0.0, 0.0, 0.0])
 
-        # Penalize for losing the kilobots from the light
-        kilobot_positions = kilobots_info[:, :2]  # Get x, y positions of kilobots
-        distances_to_light = np.linalg.norm(kilobot_positions - light_info, axis=1)  # Calculate distances
-        #reward -= 100 * np.sum(distances_to_light)
+        # 1) Encourage object to goal
+        distance_obj_goal = np.linalg.norm(object_info[:2] - goal[:2])
+        orientation_error = np.abs(object_info[2] - goal[2])
+        r_obj_dist = np.exp(-distance_obj_goal)
+        r_obj_orient = np.exp(-orientation_error)
 
-        # Penalize more the further the light is from the object's position
-        light_to_object_distance = np.linalg.norm(light_info - object_info[:2])  # Distance between light and object
-        reward -= 1.0 * (light_to_object_distance ** 2)  # Quadratic penalty for distance
+        # 2) Encourage light near object
+        dist_light_obj = np.linalg.norm(light_info - object_info[:2])
+        r_light_obj = np.exp(-dist_light_obj)
+
+        # 3) Encourage swarm near object
+        #swarm_center = np.mean(kilobots_info[:, :2], axis=0)
+        #dist_swarm_obj = np.linalg.norm(swarm_center - object_info[:2])
+        #r_swarm_obj = np.exp(-dist_swarm_obj)
+
+        # 4) Combine rewards
+        reward = 10 * r_obj_dist + 0.5 * r_obj_orient # + 0.5 * r_light_obj # + 0.3 * r_swarm_obj
+
+        # Apply a large penalty if the object is far from the goal
+        if distance_obj_goal > 0.0005:
+            reward -= 10.0
 
         return reward
 
