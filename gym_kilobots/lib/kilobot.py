@@ -307,7 +307,7 @@ class PhototaxisKilobot(Kilobot):
         self.__light_measurement = 0
         self.__threshold = -np.inf
         self.__last_update = .0
-        self.__update_interval = 6
+        self.__update_interval = 2
         self.__update_counter = 0
         self.__no_change_counter = 0
         self.__no_change_threshold = 15
@@ -321,22 +321,146 @@ class PhototaxisKilobot(Kilobot):
 
     def _setup(self):
         self.turn_left()
+        
+
+    def step(self, time_step):
+        """
+        Executes one simulation step, updating the kilobot's position and orientation.
+        
+        This method handles the physics simulation of the kilobot's movement based on
+        motor signals. It calculates the resulting linear and angular velocities
+        and applies them to the Box2D physics body.
+        
+        Parameters:
+            time_step (float): The duration of the simulation step in seconds.
+        """
+        # Execute the kilobot's decision-making logic
+        self._loop()
+
+        # Calculate the orientation vectors for movement direction
+        cos_dir = np.cos(self.get_orientation())  # Cosine of orientation angle
+        sin_dir = np.sin(self.get_orientation())  # Sine of orientation angle
+
+        # Initialize velocity variables
+        linear_velocity = [.0, .0]  # Initial linear velocity is zero
+        angular_velocity = .0  # Initial angular velocity is zero
+
+        # These factors scale the motor signals to appropriate velocities
+        # Higher values reduce the effect of motor signals (slower movement)
+        both_motors_fudge_factor = 1000.  # Scaling factor when both motors are active
+        single_motor_fudge_factor = 500.  # Scaling factor when only one motor is active
+
+        # Compute kilobot movement based on motor states
+        if self._motor_left and self._motor_right:
+            # BOTH MOTORS ON: Move forward with possible rotation
+            
+            # Calculate linear velocity magnitude based on sum of motor signals
+            linear_velocity = ((self._motor_right + self._motor_left) / both_motors_fudge_factor *
+                               self._max_linear_velocity)
+            
+            # Convert scalar velocity to vector in kilobot's forward direction
+            linear_velocity = [sin_dir * linear_velocity, cos_dir * linear_velocity]
+
+            # Calculate angular velocity based on difference between motors
+            # Positive difference (right > left) causes clockwise rotation
+            angular_velocity = ((self._motor_right - self._motor_left) / both_motors_fudge_factor *
+                                self._max_angular_velocity)
+
+        elif self._motor_right:
+            # ONLY RIGHT MOTOR ON: Rotate clockwise around left leg
+            
+            # Calculate angular velocity based on right motor signal
+            angular_velocity = (self._motor_right / single_motor_fudge_factor *
+                                self._max_angular_velocity)
+                                
+            # Calculate total angular displacement for this time step
+            angular_displacement = angular_velocity * time_step
+
+            # Create rotation matrix for the angular displacement
+            c, s = np.cos(angular_displacement), np.sin(angular_displacement)
+            R = [[c, -s], [s, c]]
+
+            # Calculate linear movement resulting from rotation around left leg
+            # The body rotates around the left leg, causing the body to translate
+            translation = self._leg_left - np.dot(R, self._leg_left)
+            
+            # Convert local translation to world coordinates and normalize by time
+            linear_velocity = self._body.GetWorldVector(translation * _world_scale) / _world_scale / time_step
+
+        elif self._motor_left:
+            # ONLY LEFT MOTOR ON: Rotate counter-clockwise around right leg
+            
+            # Calculate angular velocity (negative for counter-clockwise)
+            angular_velocity = -(self._motor_left / single_motor_fudge_factor *
+                                 self._max_angular_velocity)
+                                 
+            # Calculate total angular displacement for this time step
+            angular_displacement = angular_velocity * time_step
+
+            # Create rotation matrix for the angular displacement
+            c, s = np.cos(angular_displacement), np.sin(angular_displacement)
+            R = [[c, -s], [s, c]]
+
+            # Calculate linear movement resulting from rotation around right leg
+            # The body rotates around the right leg, causing the body to translate
+            translation = self._leg_right - np.dot(R, self._leg_right)
+            
+            # Convert local translation to world coordinates and normalize by time
+            linear_velocity = self._body.GetWorldVector(translation * _world_scale) / _world_scale / time_step
+
+        # Apply calculated velocities to the Box2D physics body
+        self._body.angularVelocity = angular_velocity  # Set the angular velocity
+        
+        # Set the linear velocity, handling both array and scalar cases
+        if type(linear_velocity) == np.ndarray:
+            # Convert numpy array to Box2D vector and scale to world units
+            self._body.linearVelocity = b2Vec2(*linear_velocity.astype(float)) * _world_scale
+        else:
+            # Handle scalar case (shouldn't typically happen)
+            self._body.linearVelocity = linear_velocity * _world_scale
 
     def _loop(self):
-
+        """
+        Implements the kilobot's light-following behavior logic.
+        
+        This method implements a simple threshold-based phototaxis algorithm:
+        1. Only executes at specific intervals to simulate the kilobot's limited processing speed
+        2. Measures ambient light intensity at the kilobot's current position
+        3. Switches direction either when:
+           a. A higher light intensity is detected (moving towards brighter areas)
+           b. No improvement is detected for too long (escaping local minima)
+        
+        This creates a zigzagging pattern that generally moves the kilobot towards light sources.
+        """
+        # Skip updates until the update interval is reached
+        # This creates a slower update rate than the physics simulation
+        # NOTE: Let's get rid of this for our training purposes
         if self.__update_counter % self.__update_interval:
             self.__update_counter += 1
             return
 
+        # Increment the update counter
         self.__update_counter += 1
 
+        # Measure the ambient light intensity at the kilobot's position
         self.__light_measurement = self.get_ambientlight()
 
+        # Check if the light measurement exceeds the threshold 
+        # OR if no change has occurred for too long (stuck in local minimum)
         if self.__light_measurement > self.__threshold or self.__no_change_counter >= self.__no_change_threshold:
+            # Update the threshold to a slightly higher value
+            # This creates a "ratcheting" effect where the robot seeks increasing light values
             self.__threshold = self.__light_measurement + .01
+
+            # Switch the direction of movement (left or right)
+            # This creates the zigzagging behavior for exploring and climbing light gradients
             self.switch_directions()
+
+            # Reset the no-change counter since we're trying a new direction
             self.__no_change_counter = 0
         else:
+            # Increment the no-change counter if no significant change in light is detected
+            # This helps detect when the robot is stuck and needs to try a new direction
             self.__no_change_counter += 1
 
     def update(self):

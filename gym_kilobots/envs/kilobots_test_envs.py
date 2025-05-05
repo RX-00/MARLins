@@ -110,6 +110,10 @@ class QuadAssemblyKilobotsEnv(KilobotsEnv):
                 self._kilobots.append(PhototaxisKilobot(self.world, position=pos, light=self._light))
 
     def has_finished(self, state, action):
+
+        # ONLY HERE FOR TESTING PURPOSES
+        return False
+
         # Parse the observation to get kilobots, object, and light information
         #kilobots_info, _, light_info = self.parse_observation(state)
 
