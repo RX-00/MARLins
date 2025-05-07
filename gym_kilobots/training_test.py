@@ -19,7 +19,7 @@ square_objects = [
 
 # Define 1 object in the center of the environment
 single_center_object = [
-    ((-0.35, 0.35), 0.0)        # top left,
+    ((-1.0, 1.0), 0.0)        # missing,
 ]
 
 # Choose a fixed light position
@@ -83,27 +83,28 @@ class RenderCallback(BaseCallback):
 # of two layers of size 32 each with Relu activation function
 # Note: an extra linear layer will be added on top of the pi and the vf nets, respectively
 policy_kwargs = dict(activation_fn=torch.nn.ReLU,
-                     net_arch=dict(pi=[256, 256], vf=[256, 256]))
+                     net_arch=dict(pi=[128, 128], vf=[128, 128]))
 
 # Train the agent
-#model = PPO("MlpPolicy", env, policy_kwargs=policy_kwargs, verbose=1)
-#model = PPO("MlpPolicy", env, verbose=1)
+"""
 model = PPO("MlpPolicy",
             env,
+            #policy_kwargs=policy_kwargs,
             learning_rate=1e-4, # step size optimizer
             n_steps=500, # rollout length
-            batch_size=100, # minibatch size of collected experiences
+            batch_size=150, # minibatch size of collected experiences
             n_epochs=20, # number of passes over training data each update
             gamma=0.99, # discount factor of future rewards
             gae_lambda=0.95, # lambda param in Generalized Advantage Estimation (helps reduce variance in the advantage estimation)
             clip_range=0.2, # clipping size for PPO policy updates
-            ent_coef=0.05, # coeff for entropy bonus (pos encourages exploration)
+            ent_coef=0.0, # coeff for entropy bonus (pos encourages exploration)
             verbose=1, # detail level of msgs on training process printed
             )
-model.learn(total_timesteps=100_000,
-            callback=RenderCallback(env, render_freq=10_000))
+"""
+#model.learn(total_timesteps=5_000_000,
+#            callback=RenderCallback(env, render_freq=10_000))
 #model.learn(total_timesteps=1_000_000)
-model.save("swarm_ppo")
+#model.save("swarm_ppo")
 
 # Test the policy
 model = PPO.load("swarm_ppo")

@@ -65,8 +65,9 @@ class QuadAssemblyKilobotsEnv(KilobotsEnv):
 
         # Define the action space
         # Example: 2D continuous control for light source movement
+        # NOTE: lower and upper bounds being smaller train better
         self.action_space = spaces.Box(
-            low=-1.0, high=1.0, shape=(2,), dtype=np.float32
+            low=-0.5, high=0.5, shape=(2,), dtype=np.float32
         )  # Example action space for light control
 
 
@@ -109,6 +110,10 @@ class QuadAssemblyKilobotsEnv(KilobotsEnv):
                 pos = (swarm_spawn_location[0] + offset[0], swarm_spawn_location[1] + offset[1])
                 self._kilobots.append(PhototaxisKilobot(self.world, position=pos, light=self._light))
 
+        # Sample a random light goal in the environment setup
+        self._light_goal = np.random.uniform(-0.8, 0.8, size=2)
+        #self._light_goal = np.array([0.8, -0.8])
+    """
     def has_finished(self, state, action):
         # Parse the observation to get kilobots, object, and light information
         #kilobots_info, _, light_info = self.parse_observation(state)
@@ -134,36 +139,24 @@ class QuadAssemblyKilobotsEnv(KilobotsEnv):
             return True
 
         return False
-
+    """
     def get_reward(self, state, action):
         kilobots_info = state["kilobots"]
         object_info = state["objects"].squeeze()
         light_info = state["light"]
 
-        goal = np.array([0.0, 0.0, 0.0])
+        # 1) Light to random goal distance
+        dist_light_goal = np.linalg.norm(light_info - self._light_goal)
+        r_light_goal = np.exp(-dist_light_goal)
 
-        # 1) Encourage object to goal
-        distance_obj_goal = np.linalg.norm(object_info[:2] - goal[:2])
-        orientation_error = np.abs(object_info[2] - goal[2])
-        r_obj_dist = np.exp(-distance_obj_goal)
-        r_obj_orient = np.exp(-orientation_error)
+        # 2) Kilobots to light distance
+        kilobot_positions = kilobots_info[:, :2]  # x, y positions
+        dists_kb_light = np.linalg.norm(kilobot_positions - light_info, axis=1)
+        avg_dist_kb_light = np.mean(dists_kb_light) if dists_kb_light.size > 0 else 0.0
+        r_kb_light = np.exp(-avg_dist_kb_light)
 
-        # 2) Encourage light near object
-        dist_light_obj = np.linalg.norm(light_info - object_info[:2])
-        r_light_obj = np.exp(-dist_light_obj)
-
-        # 3) Encourage swarm near object
-        #swarm_center = np.mean(kilobots_info[:, :2], axis=0)
-        #dist_swarm_obj = np.linalg.norm(swarm_center - object_info[:2])
-        #r_swarm_obj = np.exp(-dist_swarm_obj)
-
-        # 4) Combine rewards
-        reward = 10 * r_obj_dist + 0.5 * r_obj_orient # + 0.5 * r_light_obj # + 0.3 * r_swarm_obj
-
-        # Apply a large penalty if the object is far from the goal
-        if distance_obj_goal > 0.0005:
-            reward -= 10.0
-
+        # Combine: encourage light near goal and kilobots near light
+        reward = r_light_goal #+ 0.5 * r_kb_light
         return reward
 
     def get_info(self, state, action):
