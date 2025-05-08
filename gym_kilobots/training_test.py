@@ -101,13 +101,13 @@ model = PPO("MlpPolicy",
             verbose=1, # detail level of msgs on training process printed
             )
 """
-#model.learn(total_timesteps=5_000_000,
+#model.learn(total_timesteps=500_000,
 #            callback=RenderCallback(env, render_freq=10_000))
 #model.learn(total_timesteps=1_000_000)
-#model.save("swarm_ppo")
+#model.save("swarm_move_ppo")
 
 # Test the policy
-model = PPO.load("swarm_ppo")
+model = PPO.load("swarm_move_ppo")
 
 def controller(x):
       # Extract only the action from the tuple returned by model.predict

@@ -19,7 +19,7 @@ def manual_control_demo():
 
     # Define 1 object in the center of the environment
     single_center_object = [
-        ((-1.0, 1.0), 0.0)        # top left,
+        ((-0.3, 0.3), 0.0)        # top left,
     ]
 
     # Choose a fixed light position

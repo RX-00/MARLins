@@ -347,8 +347,8 @@ class PhototaxisKilobot(Kilobot):
 
         # These factors scale the motor signals to appropriate velocities
         # Higher values reduce the effect of motor signals (slower movement)
-        both_motors_fudge_factor = 1000.  # Scaling factor when both motors are active
-        single_motor_fudge_factor = 500.  # Scaling factor when only one motor is active
+        both_motors_fudge_factor = 900.  # Scaling factor when both motors are active og 500
+        single_motor_fudge_factor = 400.  # Scaling factor when only one motor is active og 250
 
         # Compute kilobot movement based on motor states
         if self._motor_left and self._motor_right:
@@ -454,7 +454,7 @@ class PhototaxisKilobot(Kilobot):
 
             # Switch the direction of movement (left or right)
             # This creates the zigzagging behavior for exploring and climbing light gradients
-            self.switch_directions(motor_pwr=250)
+            self.switch_directions(motor_pwr=255)
 
             # Reset the no-change counter since we're trying a new direction
             self.__no_change_counter = 0

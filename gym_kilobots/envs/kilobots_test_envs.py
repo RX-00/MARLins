@@ -67,7 +67,7 @@ class QuadAssemblyKilobotsEnv(KilobotsEnv):
         # Example: 2D continuous control for light source movement
         # NOTE: lower and upper bounds being smaller train better
         self.action_space = spaces.Box(
-            low=-0.5, high=0.5, shape=(2,), dtype=np.float32
+            low=-0.25, high=0.25, shape=(2,), dtype=np.float32
         )  # Example action space for light control
 
 
@@ -111,9 +111,9 @@ class QuadAssemblyKilobotsEnv(KilobotsEnv):
                 self._kilobots.append(PhototaxisKilobot(self.world, position=pos, light=self._light))
 
         # Sample a random light goal in the environment setup
-        self._light_goal = np.random.uniform(-0.8, 0.8, size=2)
-        #self._light_goal = np.array([0.8, -0.8])
-    """
+        #self._light_goal = np.random.uniform(-0.8, 0.8, size=2)
+        self._light_goal = np.array([0.8, -0.8])
+    
     def has_finished(self, state, action):
         # Parse the observation to get kilobots, object, and light information
         #kilobots_info, _, light_info = self.parse_observation(state)
@@ -139,7 +139,7 @@ class QuadAssemblyKilobotsEnv(KilobotsEnv):
             return True
 
         return False
-    """
+    
     def get_reward(self, state, action):
         kilobots_info = state["kilobots"]
         object_info = state["objects"].squeeze()
