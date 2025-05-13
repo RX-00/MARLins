@@ -92,6 +92,8 @@ python gym_kilobots/test.py
 
 This script will create the “QuadAssembly” environment, reset, and run for a few hundred steps. If everything is correct, a PyGame window appears with kilobots moving around (assuming `render_mode='human'` in the code).
 
+The `training_test.py` script found in the experimental branch is meant for training and evaluating movement and manipulation control policies.
+
 ---
 
 ## 5. Notes and Troubleshooting
